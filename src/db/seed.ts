@@ -16,7 +16,14 @@ import {
   DEMO_USERS,
   DEMO_WORK_ITEMS,
 } from './seed/demo-data';
-import { createScriptClient, createScriptDb, directUrl, hostOf, loadScriptEnv } from './script-client';
+import {
+  createScriptClient,
+  createScriptDb,
+  describeDbError,
+  directUrl,
+  hostOf,
+  loadScriptEnv,
+} from './script-client';
 import {
   organizations,
   projectMembers,
@@ -400,6 +407,6 @@ function printVerification(): void {
 
 main().catch((error: unknown) => {
   console.error('Seed gagal.');
-  console.error(error instanceof Error ? error.message : error);
+  console.error(describeDbError(error));
   process.exitCode = 1;
 });

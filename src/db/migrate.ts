@@ -1,6 +1,6 @@
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 
-import { createScriptClient, createScriptDb, directUrl, hostOf } from './script-client';
+import { createScriptClient, createScriptDb, describeDbError, directUrl, hostOf } from './script-client';
 
 async function main(): Promise<void> {
   const url = directUrl();
@@ -17,6 +17,6 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   console.error('Migrasi gagal.');
-  console.error(error instanceof Error ? error.message : error);
+  console.error(describeDbError(error));
   process.exitCode = 1;
 });

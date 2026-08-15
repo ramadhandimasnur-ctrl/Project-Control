@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { createScriptClient, directUrl, hostOf } from './script-client';
+import { createScriptClient, describeDbError, directUrl, hostOf } from './script-client';
 
 const SQL_DIR = path.join('src', 'db', 'sql');
 const VIEWS_FILE = path.join('src', 'db', 'views.sql');
@@ -42,6 +42,6 @@ async function main(): Promise<void> {
 main().catch((error: unknown) => {
   console.log('');
   console.error('Penerapan SQL tambahan gagal.');
-  console.error(error instanceof Error ? error.message : error);
+  console.error(describeDbError(error));
   process.exitCode = 1;
 });
