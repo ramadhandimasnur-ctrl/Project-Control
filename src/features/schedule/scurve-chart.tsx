@@ -29,6 +29,8 @@ export type CurvePoint = {
   label: string;
   plannedPct: string;
   cumulativePct: string;
+  /** Realised cumulative, when progress has been recorded. */
+  actualCumulative?: string | null;
 };
 
 const asPercent = (value: string): number => Number((Number(value) * 100).toFixed(4));
@@ -38,9 +40,16 @@ export function SCurveChart({ curve }: { curve: CurvePoint[] }) {
     label: point.label,
     periode: asPercent(point.plannedPct),
     kumulatif: asPercent(point.cumulativePct),
+    // Null rather than zero past the last report: a line that dives to the
+    // axis reads as a collapse, when nothing has happened yet.
+    realisasi:
+      point.actualCumulative === undefined || point.actualCumulative === null
+        ? null
+        : asPercent(point.actualCumulative),
   }));
 
-  const peak = Math.max(100, ...data.map((d) => d.kumulatif));
+  const hasActual = data.some((d) => d.realisasi !== null);
+  const peak = Math.max(100, ...data.map((d) => Math.max(d.kumulatif, d.realisasi ?? 0)));
 
   return (
     <div className="h-96 w-full rounded-lg border p-4">
@@ -66,7 +75,7 @@ export function SCurveChart({ curve }: { curve: CurvePoint[] }) {
           <Tooltip
             formatter={(value, name) => [
               `${Number(Number(value).toFixed(2))}%`,
-              name === 'periode' ? 'Porsi periode' : 'Kumulatif',
+              name === 'periode' ? 'Porsi periode' : name === 'realisasi' ? 'Realisasi' : 'Rencana',
             ]}
             contentStyle={{
               background: 'var(--popover)',
@@ -77,18 +86,32 @@ export function SCurveChart({ curve }: { curve: CurvePoint[] }) {
             }}
           />
           <Legend
-            formatter={(value: string) => (value === 'periode' ? 'Porsi periode' : 'Kumulatif')}
+            formatter={(value: string) =>
+              value === 'periode' ? 'Porsi periode' : value === 'realisasi' ? 'Realisasi' : 'Rencana'
+            }
             wrapperStyle={{ fontSize: 12 }}
           />
           <Bar dataKey="periode" fill="var(--muted-foreground)" opacity={0.35} radius={[3, 3, 0, 0]} />
           <Line
             type="monotone"
             dataKey="kumulatif"
-            stroke="var(--primary)"
+            stroke="var(--muted-foreground)"
             strokeWidth={2}
-            dot={{ r: 2 }}
+            strokeDasharray="5 4"
+            dot={false}
             activeDot={{ r: 4 }}
           />
+          {hasActual ? (
+            <Line
+              type="monotone"
+              dataKey="realisasi"
+              stroke="var(--primary)"
+              strokeWidth={2.5}
+              dot={{ r: 2 }}
+              activeDot={{ r: 5 }}
+              connectNulls={false}
+            />
+          ) : null}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
