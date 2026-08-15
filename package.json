@@ -22,6 +22,7 @@
     "db:views": "tsx src/db/apply-views.ts",
     "db:setup": "npm run db:migrate && npm run db:views",
     "db:seed": "tsx src/db/seed.ts",
+    "db:import:utba": "tsx --conditions=react-server src/db/import-utba.ts",
     "db:reset": "tsx src/db/reset.ts",
     "db:studio": "drizzle-kit studio"
   },

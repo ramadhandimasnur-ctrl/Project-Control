@@ -1,83 +1,151 @@
-import { parseUtba } from '@/lib/import/utba';
+// Must precede every other import: the database module opens its pool during
+// module evaluation and needs the environment already loaded.
+import './load-env';
+
+import { eq } from 'drizzle-orm';
+
+import { db } from '@/db';
+import { organizations, users } from '@/db/schema';
+import { type PriceType } from '@/lib/calc/price';
+import { parseUtba, type UtbaParseResult } from '@/lib/import/utba';
 import { readWorkbook, requireSheet, worksheetRows } from '@/lib/import/xlsx';
+import { importUtba, type ImportReport } from '@/services/import-utba';
 
 /**
- * Reads the UTBA sheet of a source workbook and reports what an import would
- * produce. Writing to the database comes next; this pass exists so the file
- * can be inspected before anything is committed to it.
+ * Imports the UTBA sheet of a source workbook into the resource catalogue.
  *
- *   npx tsx src/db/import-utba.ts "<path to .xlsx>"
+ * Reads only, unless --apply is given. The dry run performs the whole import
+ * inside a transaction and rolls it back, so the counts it reports are what
+ * actually happened rather than a prediction.
+ *
+ *   npm run db:import:utba -- "<file.xlsx>" --email=admin@demo.test
+ *   npm run db:import:utba -- "<file.xlsx>" --email=admin@demo.test --apply
  */
+
+function flag(name: string): string | undefined {
+  const prefix = `--${name}=`;
+  const match = process.argv.find((a) => a.startsWith(prefix));
+  return match?.slice(prefix.length);
+}
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function printReport(report: ImportReport, parsed: UtbaParseResult): void {
+  const label = report.dryRun ? 'UJI COBA (tidak ada yang disimpan)' : 'DITERAPKAN';
+  console.log(`\n=== ${label} ===`);
+  console.log(`  Satuan     : ${report.units.created} dibuat, ${report.units.existing} sudah ada`);
+  console.log(
+    `  Kategori   : ${report.categories.created} dibuat, ${report.categories.existing} sudah ada`,
+  );
+  console.log(
+    `  Sumber daya: ${report.resources.created} dibuat, ${report.resources.updated} diperbarui, ${report.resources.unchanged} tidak berubah`,
+  );
+  console.log(
+    `  Harga      : ${report.prices.created} dibuat, ${report.prices.superseded} diganti, ${report.prices.unchanged} tidak berubah`,
+  );
+
+  const errors = report.issues.filter((i) => i.severity === 'ERROR');
+  const warnings = report.issues.filter((i) => i.severity === 'WARNING');
+  console.log(`  Ditolak    : ${errors.length}`);
+  console.log(`  Peringatan : ${warnings.length}`);
+
+  for (const issue of errors.slice(0, 20)) {
+    console.log(`    baris ${issue.rowNumber} [${issue.code ?? '-'}] ${issue.message}`);
+  }
+  for (const issue of warnings.slice(0, 20)) {
+    console.log(`    baris ${issue.rowNumber} [${issue.code ?? '-'}] ${issue.message}`);
+  }
+
+  const total = parsed.resources.length;
+  const handled = report.resources.created + report.resources.updated + report.resources.unchanged;
+  if (handled !== total) {
+    console.log(`\n  CATATAN: ${total - handled} baris terbaca tetapi tidak tersimpan.`);
+  }
+}
+
 async function main(): Promise<void> {
   const filePath = process.argv[2];
-  if (!filePath) {
-    console.error('Sebutkan lokasi file Excel:\n  npx tsx src/db/import-utba.ts "…/ANALISA RAP.xlsx"');
+  const email = flag('email');
+
+  if (!filePath || filePath.startsWith('--') || !email) {
+    console.error(
+      'Penggunaan:\n' +
+        '  npm run db:import:utba -- "<file.xlsx>" --email=<email admin> [pilihan]\n\n' +
+        'Pilihan:\n' +
+        '  --apply            Simpan ke database. Tanpa ini hanya uji coba.\n' +
+        '  --date=YYYY-MM-DD  Tanggal berlaku harga (default: hari ini).\n' +
+        '  --price=RAP|RAB|BOTH  Kolom harga tujuan (default: RAP).',
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const priceArg = (flag('price') ?? 'RAP').toUpperCase();
+  const priceTypes: PriceType[] =
+    priceArg === 'BOTH' ? ['RAB', 'RAP'] : priceArg === 'RAB' ? ['RAB'] : ['RAP'];
+  const onDate = flag('date') ?? today();
+  const apply = process.argv.includes('--apply');
+
+  const [actor] = await db
+    .select({
+      id: users.id,
+      orgId: users.orgId,
+      email: users.email,
+      fullName: users.fullName,
+      globalRole: users.globalRole,
+      orgName: organizations.name,
+    })
+    .from(users)
+    .innerJoin(organizations, eq(organizations.id, users.orgId))
+    .where(eq(users.email, email))
+    .limit(1);
+
+  if (!actor) {
+    console.error(`Pengguna "${email}" tidak ditemukan.`);
     process.exitCode = 1;
     return;
   }
 
   console.log(`Membaca ${filePath} …`);
   const workbook = await readWorkbook(filePath);
-  const sheet = requireSheet(workbook, 'UTBA');
+  const parsed = parseUtba(worksheetRows(requireSheet(workbook, 'UTBA')));
 
-  const result = parseUtba(worksheetRows(sheet));
-
-  const errors = result.issues.filter((i) => i.severity === 'ERROR');
-  const warnings = result.issues.filter((i) => i.severity === 'WARNING');
-
+  console.log(`  ${parsed.resources.length} sumber daya, ${parsed.categories.length} kategori, ${parsed.units.length} satuan`);
   console.log('');
-  console.log('=== Ringkasan ===');
-  console.log(`  Sumber daya terbaca : ${result.resources.length}`);
-  console.log(`  Kategori            : ${result.categories.length}`);
-  console.log(`  Satuan              : ${result.units.length}`);
-  console.log(`  Baris ditolak       : ${errors.length}`);
-  console.log(`  Peringatan          : ${warnings.length}`);
+  console.log(`Organisasi tujuan : ${actor.orgName}`);
+  console.log(`Dijalankan sebagai: ${actor.fullName} <${actor.email}> (${actor.globalRole})`);
+  console.log(`Harga ditulis ke  : ${priceTypes.join(' dan ')}, berlaku sejak ${onDate}`);
 
-  const byType = new Map<string, number>();
-  for (const r of result.resources) byType.set(r.type, (byType.get(r.type) ?? 0) + 1);
-  console.log('\n=== Per jenis ===');
-  for (const [type, n] of [...byType.entries()].sort((a, b) => b[1] - a[1])) {
-    console.log(`  ${type.padEnd(10)} ${String(n).padStart(4)}`);
-  }
+  const report = await importUtba(
+    {
+      id: actor.id,
+      orgId: actor.orgId,
+      email: actor.email,
+      fullName: actor.fullName,
+      globalRole: actor.globalRole,
+    },
+    parsed,
+    { onDate, priceTypes, dryRun: !apply },
+  );
 
-  console.log('\n=== Kategori ===');
-  for (const c of result.categories) {
-    const count = result.resources.filter((r) => r.categoryCode === c.code).length;
-    const indent = c.parentCode ? '    ' : '  ';
-    console.log(`${indent}${c.name.padEnd(32)} ${c.type.padEnd(9)} ${String(count).padStart(4)}`);
-  }
+  printReport(report, parsed);
 
-  console.log('\n=== Satuan ===');
-  for (const u of result.units) {
-    console.log(`  ${u.code.padEnd(10)} ${u.dimension.padEnd(8)} ${String(u.usageCount).padStart(4)}`);
-  }
-
-  if (errors.length > 0) {
-    console.log('\n=== Baris ditolak ===');
-    for (const issue of errors.slice(0, 30)) {
-      console.log(`  baris ${issue.rowNumber} [${issue.code ?? '-'}] ${issue.message}`);
-    }
-    if (errors.length > 30) console.log(`  … dan ${errors.length - 30} lainnya`);
-  }
-
-  if (warnings.length > 0) {
-    console.log('\n=== Peringatan ===');
-    for (const issue of warnings.slice(0, 30)) {
-      console.log(`  baris ${issue.rowNumber} [${issue.code ?? '-'}] ${issue.message}`);
-    }
-    if (warnings.length > 30) console.log(`  … dan ${warnings.length - 30} lainnya`);
-  }
-
-  console.log('\n=== Contoh 5 baris pertama ===');
-  for (const r of result.resources.slice(0, 5)) {
-    console.log(
-      `  ${r.code.padEnd(9)} ${r.name.slice(0, 26).padEnd(26)} ${(r.spec ?? '').slice(0, 18).padEnd(18)} ${r.unitCode.padEnd(6)} ${r.price.padStart(12)}  ${r.type}`,
-    );
+  if (!apply) {
+    console.log('\nJalankan ulang dengan --apply untuk menyimpan.');
   }
 }
 
-main().catch((error: unknown) => {
-  console.error('\nPembacaan gagal.');
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+main()
+  .catch((error: unknown) => {
+    console.error('\nImpor gagal.');
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  })
+  .finally(() => {
+    void (async () => {
+      const { sqlClient } = await import('@/db');
+      await sqlClient.end({ timeout: 5 });
+    })();
+  });
