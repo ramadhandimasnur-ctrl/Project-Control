@@ -64,21 +64,36 @@ export function GanttChart({
               Pekerjaan
             </div>
             <div className="flex shrink-0" style={{ width: `${trackWidthPx}px` }}>
-              {periods.map((period, index) => (
-                <div
-                  key={period.id}
-                  className={cn(
-                    'shrink-0 overflow-hidden py-2 text-center text-muted-foreground',
-                    isLabelled(index, labelStride) ? 'border-l' : '',
-                  )}
-                  style={{ width: `${trackWidthPx / periods.length}px` }}
-                  title={`${period.label} · ${formatDay(period.startDate)} – ${formatDay(period.endDate)}`}
-                >
-                  {isLabelled(index, labelStride) ? (
-                    <span className="whitespace-nowrap px-1">{period.label}</span>
-                  ) : null}
-                </div>
-              ))}
+              {periods.map((period, index) => {
+                const labelled = isLabelled(index, labelStride);
+
+                return (
+                  <div
+                    key={period.id}
+                    /*
+                     * Deliberately not clipped. A daily column is 26px wide and
+                     * a date needs about 76, which is exactly what labelStride
+                     * buys by leaving the next few columns empty — but only if
+                     * the label is allowed to spill into them. Clipping here
+                     * turned "15 Agt" into "15 A".
+                     */
+                    className={cn(
+                      'relative shrink-0 py-2 text-muted-foreground',
+                      labelled ? 'border-l' : '',
+                    )}
+                    style={{ width: `${trackWidthPx / periods.length}px` }}
+                    title={`${period.label} · ${formatDay(period.startDate)} – ${formatDay(period.endDate)}`}
+                  >
+                    {labelled ? (
+                      // Absolute, so a long label never widens the column it
+                      // marks and never shifts the ticks after it.
+                      <span className="absolute top-2 left-1 whitespace-nowrap text-[10px] leading-4">
+                        {period.label}
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </div>
 

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import { toUserMessage } from '@/lib/errors';
 import { checklistFormSchema, progressEntryFormSchema } from '@/lib/validation/progress';
+import { listMilestones, recordMilestoneProgress } from '@/services/milestones';
 import {
   approveManyProgressEntries,
   approveProgressEntry,
@@ -154,6 +155,59 @@ export async function approveAllAction(
     const user = await requireSessionUser();
     const ids = await pendingEntryIds(user.id, projectId, periodId);
     const result = await approveManyProgressEntries(user, projectId, ids);
+    revalidateProgress(projectId);
+    return { ok: true, ...result };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export type MilestoneStateResult =
+  | { ok: true; milestones: { id: string; name: string; weight: string; sortOrder: number; completedAt: string | null }[]; completion: string; totalWeight: string; isUnderSpecified: boolean }
+  | Failure;
+
+export async function listMilestonesAction(
+  projectId: string,
+  workItemId: string,
+): Promise<MilestoneStateResult> {
+  try {
+    const user = await requireSessionUser();
+    const set = await listMilestones(user.id, projectId, workItemId);
+    return {
+      ok: true,
+      milestones: set.milestones,
+      completion: set.completion,
+      totalWeight: set.totalWeight,
+      isUnderSpecified: set.isUnderSpecified,
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export type MilestoneSaveResult =
+  | { ok: true; pctThisPeriod: string; completion: string }
+  | Failure;
+
+/**
+ * Saves the stages and the progress they imply in one call.
+ *
+ * Two round trips would let the stages land while the progress entry failed,
+ * leaving the item claiming a completion no period accounts for.
+ */
+export async function saveMilestoneProgressAction(
+  projectId: string,
+  workItemId: string,
+  periodId: string,
+  input: {
+    milestones: { id: string | null; name: string; weight: string; sortOrder: number; completedAt: string | null }[];
+    entryDate: string;
+    note: string | null;
+  },
+): Promise<MilestoneSaveResult> {
+  try {
+    const user = await requireSessionUser();
+    const result = await recordMilestoneProgress(user, projectId, workItemId, periodId, input);
     revalidateProgress(projectId);
     return { ok: true, ...result };
   } catch (error) {

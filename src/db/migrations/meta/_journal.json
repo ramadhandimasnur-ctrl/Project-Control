@@ -36,6 +36,13 @@
       "when": 1786814735020,
       "tag": "0004_revert_inspection_photos",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786827839701,
+      "tag": "0005_milestone_completion",
+      "breakpoints": true
     }
   ]
 }

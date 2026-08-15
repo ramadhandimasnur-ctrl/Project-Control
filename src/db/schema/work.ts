@@ -11,7 +11,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { coefficient, money, percent, primaryId, quantity } from './_shared';
+import { coefficient, day, money, percent, primaryId, quantity } from './_shared';
 import { ahspRoleEnum, progressMethodEnum } from './enums';
 import { auditColumns } from './org';
 import { projects } from './projects';
@@ -144,6 +144,14 @@ export const workItemMilestones = pgTable(
     name: text('name').notNull(),
     weight: percent('weight').notNull(),
     sortOrder: integer('sort_order').notNull().default(0),
+    /**
+     * When the stage was finished, or null while it is outstanding.
+     *
+     * A milestone is completed once for the whole project rather than per
+     * period: "pondasi selesai" does not happen again in March. The period a
+     * completion lands in is derived from this date.
+     */
+    completedAt: day('completed_at'),
     ...auditColumns(),
   },
   (t) => [

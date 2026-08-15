@@ -60,6 +60,13 @@ export type ProgressBoardRow = {
   /** How much of the item is still available to report. */
   remaining: string;
   checklistVerdict: ChecklistResult | null;
+  /**
+   * The three inspection answers as saved.
+   *
+   * Carried alongside the verdict so reopening the dialog shows what was
+   * recorded rather than an empty form, which reads as "never inspected".
+   */
+  checklist: { asDrawing: ChecklistResult; position: ChecklistResult; dimension: ChecklistResult } | null;
 };
 
 export type ProgressBoard = {
@@ -146,11 +153,14 @@ export async function getProgressBoard(
           .select({
             workItemId: workItemChecklists.workItemId,
             verdict: workItemChecklists.verdict,
+            asDrawing: workItemChecklists.asDrawing,
+            position: workItemChecklists.position,
+            dimension: workItemChecklists.dimension,
           })
           .from(workItemChecklists)
           .where(eq(workItemChecklists.periodId, selected));
 
-  const verdictOf = new Map(checklists.map((row) => [row.workItemId, row.verdict]));
+  const checklistOf = new Map(checklists.map((row) => [row.workItemId, row]));
 
   const completions = completionByItem(
     approved.filter((entry) => entry.periodId !== selected),
@@ -187,7 +197,17 @@ export async function getProgressBoard(
         item.id,
         selected,
       ).toString(),
-      checklistVerdict: verdictOf.get(item.id) ?? null,
+      checklistVerdict: checklistOf.get(item.id)?.verdict ?? null,
+      checklist: (() => {
+        const saved = checklistOf.get(item.id);
+        return saved
+          ? {
+              asDrawing: saved.asDrawing,
+              position: saved.position,
+              dimension: saved.dimension,
+            }
+          : null;
+      })(),
     };
   });
 

@@ -1,6 +1,15 @@
 'use client';
 
-import { Ban, CheckCheck, ClipboardCheck, Loader2, Send, SquarePen } from 'lucide-react';
+import {
+  Ban,
+  CheckCheck,
+  ClipboardCheck,
+  ListChecks,
+  Loader2,
+  Send,
+  SquarePen,
+  Trash2,
+} from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
@@ -32,8 +41,15 @@ import { EMPTY_VALUE, formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { type ProgressBoard, type ProgressBoardRow } from '@/services/progress';
 
-import { approveAllAction, approveProgressAction, rejectProgressAction, submitProgressAction } from './actions';
+import {
+  approveAllAction,
+  approveProgressAction,
+  deleteProgressAction,
+  rejectProgressAction,
+  submitProgressAction,
+} from './actions';
 import { ChecklistDialog } from './checklist-dialog';
+import { MilestoneDialog } from './milestone-dialog';
 import { ProgressDialog } from './progress-dialog';
 
 const STATUS_LABELS = {
@@ -62,6 +78,7 @@ export function ProgressBoardView({
   const router = useRouter();
   const params = useSearchParams();
   const [recording, setRecording] = useState<ProgressBoardRow | null>(null);
+  const [staging, setStaging] = useState<ProgressBoardRow | null>(null);
   const [checking, setChecking] = useState<ProgressBoardRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [reason, setReason] = useState('');
@@ -209,6 +226,11 @@ export function ProgressBoardView({
 
                   <TableCell>
                     <div className="flex justify-end gap-1">
+                      {/*
+                        A milestone item is never given a percentage box: its
+                        figure is derived from the stages, and typing over it
+                        would let the two disagree.
+                      */}
                       {canRecord && row.status !== 'APPROVED' ? (
                         <Button
                           variant="ghost"
@@ -217,12 +239,20 @@ export function ProgressBoardView({
                           title={
                             done && row.status === null
                               ? 'Pekerjaan ini sudah 100% selesai.'
-                              : undefined
+                              : row.method === 'MILESTONE'
+                                ? 'Progres dihitung dari tahapan yang selesai.'
+                                : undefined
                           }
-                          onClick={() => setRecording(row)}
+                          onClick={() =>
+                            row.method === 'MILESTONE' ? setStaging(row) : setRecording(row)
+                          }
                         >
-                          <SquarePen className="size-3.5" aria-hidden />
-                          Catat
+                          {row.method === 'MILESTONE' ? (
+                            <ListChecks className="size-3.5" aria-hidden />
+                          ) : (
+                            <SquarePen className="size-3.5" aria-hidden />
+                          )}
+                          {row.method === 'MILESTONE' ? 'Tahapan' : 'Catat'}
                         </Button>
                       ) : null}
 
@@ -256,6 +286,57 @@ export function ProgressBoardView({
                           )}
                           Ajukan
                         </Button>
+                      ) : null}
+
+                      {/*
+                        Only while it is still a draft or was sent back. An
+                        approved entry stays put — the audit trail has to keep
+                        showing what was signed off.
+                      */}
+                      {canRecord && row.entryId && (row.status === 'DRAFT' || row.status === 'REJECTED') ? (
+                        <AlertDialog>
+                          <AlertDialogTrigger
+                            render={
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="text-destructive hover:text-destructive"
+                                disabled={busy}
+                                aria-label={`Hapus catatan ${row.code}`}
+                              />
+                            }
+                          >
+                            <Trash2 className="size-3.5" aria-hidden />
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Hapus catatan progres {row.code}?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Catatan periode ini dihapus sepenuhnya, dan pekerjaannya kembali
+                                seperti belum pernah dicatat pada periode ini.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Batal</AlertDialogCancel>
+                              <Button
+                                variant="destructive"
+                                disabled={pending}
+                                onClick={() =>
+                                  run(row.workItemId, async () => {
+                                    const result = await deleteProgressAction(
+                                      projectId,
+                                      row.entryId!,
+                                    );
+                                    if (result.ok) toast.success('Catatan progres dihapus.');
+                                    return result;
+                                  })
+                                }
+                              >
+                                Ya, hapus
+                              </Button>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       ) : null}
 
                       {board.canApprove && row.entryId && row.status === 'SUBMITTED' ? (
@@ -349,6 +430,17 @@ export function ProgressBoardView({
         />
       ) : null}
 
+      {staging && period ? (
+        <MilestoneDialog
+          open
+          onOpenChange={(open) => setStaging(open ? staging : null)}
+          projectId={projectId}
+          periodId={period.id}
+          periodLabel={period.label}
+          row={staging}
+        />
+      ) : null}
+
       {checking && period ? (
         <ChecklistDialog
           open
@@ -357,7 +449,7 @@ export function ProgressBoardView({
           workItemId={checking.workItemId}
           periodId={period.id}
           label={`${checking.code} · ${period.label}`}
-          current={null}
+          current={checking.checklist}
         />
       ) : null}
     </div>

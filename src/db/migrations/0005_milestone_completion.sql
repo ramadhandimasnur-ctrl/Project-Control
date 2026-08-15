@@ -1,0 +1,1 @@
+ALTER TABLE "work_item_milestones" ADD COLUMN "completed_at" date;
