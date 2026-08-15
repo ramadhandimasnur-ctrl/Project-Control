@@ -1,5 +1,6 @@
 node_modules/
-.next/
+# Covers .next and the .next-check output used by `npm run build:check`.
+.next*/
 out/
 build/
 dist/

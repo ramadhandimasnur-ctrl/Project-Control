@@ -3,6 +3,15 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   serverExternalPackages: ['postgres', 'exceljs'],
+  /*
+   * `next build` and `next dev` both write to .next by default, so building
+   * while the dev server is running overwrites the manifest it is serving and
+   * the browser starts 404-ing on chunks that no longer exist.
+   *
+   * Unset in production, so deployment behaviour is unchanged. `build:check`
+   * sets it to keep verification builds out of the dev server's way.
+   */
+  distDir: process.env.NEXT_DIST_DIR ?? '.next',
   experimental: {
     serverActions: {
       // Server actions default to a 1 MB body. The source workbook is a few
