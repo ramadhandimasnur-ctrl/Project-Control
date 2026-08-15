@@ -28,4 +28,8 @@ next-env.d.ts
 storage/
 tmp/
 
+# Per-machine Claude Code settings (permission grants, local overrides).
+# .claude/launch.json is shared on purpose; this file is not.
+.claude/settings.local.json
+
 legacy/**/node_modules/
