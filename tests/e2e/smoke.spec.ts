@@ -50,6 +50,15 @@ test('masuk dan membuka daftar proyek', async ({ page }) => {
 });
 
 test('setiap modul proyek terbuka tanpa error', async ({ page }) => {
+  /*
+   * Fifteen pages, each assembling its figures from a hosted database, take
+   * longer together than the default per-test budget allows. Raised rather than
+   * split so one login covers the walk; each navigation still has its own
+   * ceiling below, so a genuinely stuck page fails by name instead of running
+   * the whole test out of time.
+   */
+  test.setTimeout(300_000);
+
   await signIn(page);
   const id = await openFirstProject(page);
 
@@ -80,7 +89,7 @@ test('setiap modul proyek terbuka tanpa error', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
 
-    const response = await page.goto(`/projects/${id}${path}`);
+    const response = await page.goto(`/projects/${id}${path}`, { timeout: 45_000 });
     expect(response?.status(), `${path} membalas ${response?.status()}`).toBeLessThan(400);
 
     await expect(

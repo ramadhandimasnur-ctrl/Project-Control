@@ -1,4 +1,14 @@
+import { config as loadEnv } from 'dotenv';
 import { defineConfig, devices } from '@playwright/test';
+
+/*
+ * Next.js reads .env.local by itself, but the Playwright process does not, and
+ * the smoke test needs the seed credentials to sign in. Without this the suite
+ * skips every test and still exits green — a suite that proves nothing while
+ * looking like it passed.
+ */
+loadEnv({ path: '.env.local', quiet: true });
+loadEnv({ path: '.env', quiet: true });
 
 const PORT = Number(process.env.E2E_PORT ?? 3100);
 const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${PORT}`;
