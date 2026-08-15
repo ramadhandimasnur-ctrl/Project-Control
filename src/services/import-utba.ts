@@ -158,6 +158,7 @@ export async function importUtba(
 
     const resourceByCode = new Map(existingResources.map((r) => [r.code, r]));
     const resourceIdByCode = new Map<string, string>();
+    const toCreate: (typeof resources.$inferInsert)[] = [];
 
     for (const row of parsed.resources) {
       const unitId = unitIdByCode.get(row.unitCode);
@@ -176,24 +177,21 @@ export async function importUtba(
       const existing = resourceByCode.get(row.code);
 
       if (!existing) {
-        report.resources.created += 1;
-        const [created] = await tx
-          .insert(resources)
-          .values({
-            orgId: access.orgId,
-            code: row.code,
-            name: row.name,
-            spec: row.spec,
-            type: row.type,
-            unitId,
-            categoryId,
-            notes: row.note,
-            createdBy: user.id,
-            updatedBy: user.id,
-          })
-          .returning({ id: resources.id });
-
-        if (created) resourceIdByCode.set(row.code, created.id);
+        // Batched below. A catalogue of 374 rows inserted one at a time is
+        // ~400 round trips to a remote database, which turns a two-second
+        // import into a two-minute one.
+        toCreate.push({
+          orgId: access.orgId,
+          code: row.code,
+          name: row.name,
+          spec: row.spec,
+          type: row.type,
+          unitId,
+          categoryId,
+          notes: row.note,
+          createdBy: user.id,
+          updatedBy: user.id,
+        });
         continue;
       }
 
@@ -243,6 +241,16 @@ export async function importUtba(
         .where(eq(resources.id, existing.id));
     }
 
+    for (const chunk of chunked(toCreate, CHUNK_SIZE)) {
+      const created = await tx
+        .insert(resources)
+        .values(chunk)
+        .returning({ id: resources.id, code: resources.code });
+
+      report.resources.created += created.length;
+      for (const row of created) resourceIdByCode.set(row.code, row.id);
+    }
+
     // --- prices ------------------------------------------------------------
     const resourceIds = [...resourceIdByCode.values()];
     const existingPrices =
@@ -250,10 +258,10 @@ export async function importUtba(
         ? []
         : await tx
             .select({
+              id: resourcePrices.id,
               resourceId: resourcePrices.resourceId,
               priceType: resourcePrices.priceType,
               price: resourcePrices.price,
-              effectiveFrom: resourcePrices.effectiveFrom,
             })
             .from(resourcePrices)
             .where(
@@ -266,40 +274,33 @@ export async function importUtba(
 
     const priceKey = (resourceId: string, priceType: string) => `${resourceId}|${priceType}`;
     const priceOnDate = new Map(
-      existingPrices.map((p) => [priceKey(p.resourceId, p.priceType), p.price]),
+      existingPrices.map((p) => [priceKey(p.resourceId, p.priceType), p]),
     );
+
+    const supersededIds: string[] = [];
+    const priceRows: (typeof resourcePrices.$inferInsert)[] = [];
 
     for (const row of parsed.resources) {
       const resourceId = resourceIdByCode.get(row.code);
       if (!resourceId) continue;
 
       for (const priceType of options.priceTypes) {
-        const key = priceKey(resourceId, priceType);
-        const current = priceOnDate.get(key);
+        const current = priceOnDate.get(priceKey(resourceId, priceType));
 
         if (current !== undefined) {
           // Same date, same value: nothing to record. Same date, new value:
           // replace, because two prices cannot both start on one day.
-          if (Number(current) === Number(row.price)) {
+          if (Number(current.price) === Number(row.price)) {
             report.prices.unchanged += 1;
             continue;
           }
           report.prices.superseded += 1;
-          await tx
-            .delete(resourcePrices)
-            .where(
-              and(
-                eq(resourcePrices.resourceId, resourceId),
-                isNull(resourcePrices.projectId),
-                eq(resourcePrices.priceType, priceType),
-                eq(resourcePrices.effectiveFrom, options.onDate),
-              ),
-            );
+          supersededIds.push(current.id);
         } else {
           report.prices.created += 1;
         }
 
-        await tx.insert(resourcePrices).values({
+        priceRows.push({
           resourceId,
           projectId: null,
           priceType,
@@ -310,6 +311,13 @@ export async function importUtba(
           updatedBy: user.id,
         });
       }
+    }
+
+    for (const chunk of chunked(supersededIds, CHUNK_SIZE)) {
+      await tx.delete(resourcePrices).where(inArray(resourcePrices.id, chunk));
+    }
+    for (const chunk of chunked(priceRows, CHUNK_SIZE)) {
+      await tx.insert(resourcePrices).values(chunk);
     }
 
     await writeAuditLog(tx, {
@@ -337,6 +345,19 @@ export async function importUtba(
   });
 
   return report;
+}
+
+/**
+ * Rows per statement. Postgres caps a statement at 65535 parameters; 500 rows
+ * of a dozen columns stays comfortably inside that while keeping the number of
+ * round trips small.
+ */
+const CHUNK_SIZE = 500;
+
+function* chunked<T>(items: readonly T[], size: number): Generator<T[]> {
+  for (let i = 0; i < items.length; i += size) {
+    yield items.slice(i, i + size);
+  }
 }
 
 /** Sentinel used to roll back a dry run once its true effect is known. */
