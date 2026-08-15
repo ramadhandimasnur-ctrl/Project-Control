@@ -1,9 +1,5 @@
 'use client';
 
-import { Printer } from 'lucide-react';
-
-import { Button } from '@/components/ui/button';
-
 import { PhotoField } from './photo-field';
 import { inspectionKey, reportKey, usePhotoStash } from './photo-stash';
 
@@ -24,15 +20,6 @@ export function ReportPhotoPicker({ periodId }: { periodId: string }) {
         hint="Ditempatkan di lampiran laporan. Hanya tersimpan di peramban ini dan hilang bila halaman dimuat ulang, jadi cetak sebelum menutup atau me-refresh."
       />
     </div>
-  );
-}
-
-export function PrintButton() {
-  return (
-    <Button data-print="hide" variant="outline" onClick={() => window.print()}>
-      <Printer className="size-4" aria-hidden />
-      Cetak / Simpan PDF
-    </Button>
   );
 }
 

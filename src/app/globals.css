@@ -136,8 +136,12 @@
  * being helpfully optimised away by the browser.
  */
 @media print {
+  /*
+   * Fallback only. The report page injects its own @page from the paper
+   * control, appended to the head so it lands after this file and wins.
+   */
   @page {
-    size: A4;
+    size: 210mm 297mm;
     margin: 14mm;
   }
 
@@ -145,8 +149,35 @@
     display: none !important;
   }
 
+  /*
+   * Paper is white, whatever the screen was.
+   *
+   * The dark theme swaps these tokens on `.dark`, and print-color-adjust below
+   * tells the browser to honour backgrounds faithfully — which together meant a
+   * dark session printed its page margins solid black. Re-asserting the light
+   * values for print costs one block and removes the whole class of problem,
+   * rather than patching each surface that showed through.
+   */
+  :root,
+  .dark {
+    color-scheme: light;
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.45 0 0);
+    --border: oklch(0.85 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.145 0 0);
+  }
+
+  html,
   body {
-    background: white;
+    background: white !important;
+    color: oklch(0.145 0 0);
   }
 
   /* A photograph or a table row split across two sheets is unreadable. */

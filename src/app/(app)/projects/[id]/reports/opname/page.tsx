@@ -12,10 +12,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { PaperSettings } from '@/features/progress/paper-settings';
 import { PeriodPicker } from '@/features/progress/period-picker';
 import {
   PhotoCount,
-  PrintButton,
   ReportPhotoPicker,
   ReportPhotoPlates,
 } from '@/features/progress/report-photos';
@@ -83,19 +83,25 @@ export default async function OpnameReportPage({
   }));
 
   return (
-    <div className="print-full mx-auto w-full max-w-5xl space-y-6 p-6">
-      <div data-print="hide" className="flex flex-wrap items-end justify-between gap-3">
-        <PeriodPicker
-          projectId={projectId}
-          basePath={`/projects/${projectId}/reports/opname`}
-          periods={board.periods}
-          selectedId={period.id}
-        />
-        <div className="flex items-center gap-3">
+    <div className="p-6">
+      <div data-print="hide" className="mb-6 space-y-3 rounded-lg border p-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <PeriodPicker
+            projectId={projectId}
+            basePath={`/projects/${projectId}/reports/opname`}
+            periods={board.periods}
+            selectedId={period.id}
+          />
           <PhotoCount periodId={period.id} workItemIds={workItems.map((w) => w.id)} />
-          <PrintButton />
         </div>
+        <PaperSettings previewSelector="#opname-sheet" />
       </div>
+
+      {/*
+        The sheet is width-limited to the printable area by PaperSettings, so
+        what is arranged on screen is what lands on paper.
+      */}
+      <div id="opname-sheet" className="print-full mx-auto w-full space-y-6">
 
       {/* --- the printed sheet starts here --- */}
 
@@ -200,7 +206,8 @@ export default async function OpnameReportPage({
             <p className="border-t pt-1 text-muted-foreground">(&nbsp;&nbsp;&nbsp;&nbsp;)</p>
           </div>
         ))}
-      </section>
+        </section>
+      </div>
     </div>
   );
 }
