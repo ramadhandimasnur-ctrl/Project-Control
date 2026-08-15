@@ -6,8 +6,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { connectionOptions } from '@/db/connection';
 import type * as AhspModule from '../ahsp';
+import type * as AhspTemplatesModule from '../ahsp-templates';
 import type { SessionUser } from '../session';
 import type * as TakeoffsModule from '../takeoffs';
+import type * as WorkBreakdownModule from '../work-breakdown';
 
 /**
  * End-to-end check of the estimate: resources and prices in the catalogue,
@@ -82,6 +84,9 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
       "SELECT set_config('app.bypass_rls', 'on', true)",
       "SELECT set_config('app.allow_hard_delete', 'on', true)",
       `DELETE FROM projects WHERE org_id = '${orgId}'`,
+      // Templates hold RESTRICT references to resources, so they have to go
+      // first; their own lines cascade with them.
+      `DELETE FROM ahsp_templates WHERE org_id = '${orgId}'`,
       `DELETE FROM resources WHERE org_id = '${orgId}'`,
       `DELETE FROM units WHERE org_id = '${orgId}'`,
       `DELETE FROM users WHERE org_id = '${orgId}'`,
@@ -151,6 +156,7 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
       SELECT set_config('app.bypass_rls', 'on', true);
       SELECT set_config('app.allow_hard_delete', 'on', true);
       DELETE FROM projects WHERE org_id = '${orgId}';
+      DELETE FROM ahsp_templates WHERE org_id = '${orgId}';
       DELETE FROM resources WHERE org_id = '${orgId}';
       DELETE FROM units WHERE org_id = '${orgId}';
       DELETE FROM users WHERE org_id = '${orgId}';
@@ -318,6 +324,227 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
 
       const after = await takeoffs.deleteTakeoff(user, projectId, workItemId, first.id);
       expect(after.volume).toBe('4.0000');
+    });
+  });
+
+  /**
+   * views.sql promises each view ships with a test asserting it agrees with the
+   * pure function it mirrors. These are those tests. A view is a performance
+   * mirror, never a second opinion — if the two disagree, the view is wrong.
+   */
+  describe('view SQL sepakat dengan lib/calc', () => {
+    const round2 = (v: unknown) => Number(v).toFixed(2);
+
+    it('v_work_item_cost cocok dengan getWorkItemEstimate', async () => {
+      const estimate = await ahsp.getWorkItemEstimate(userId, projectId, workItemId);
+      const [row] = await sql`
+        SELECT unit_cost_rab, unit_cost_rap, total_rab, total_rap, contract_value, margin
+        FROM v_work_item_cost WHERE work_item_id = ${workItemId}
+      `;
+
+      expect(round2(row?.unit_cost_rab)).toBe(estimate.unitCostRab);
+      expect(round2(row?.unit_cost_rap)).toBe(estimate.unitCostRap);
+      expect(round2(row?.total_rab)).toBe(estimate.totalRab);
+      expect(round2(row?.total_rap)).toBe(estimate.totalRap);
+      expect(round2(row?.contract_value)).toBe(estimate.contractValue);
+      expect(round2(row?.margin)).toBe(estimate.margin);
+    });
+
+    it('v_work_item_weight cocok dengan getProjectEstimate', async () => {
+      const estimate = await ahsp.getProjectEstimate(userId, projectId);
+      const rows = await sql`
+        SELECT work_item_id, weight FROM v_work_item_weight WHERE project_id = ${projectId}
+      `;
+
+      for (const item of estimate.items) {
+        const row = rows.find((r) => r.work_item_id === item.workItemId);
+        expect(Number(row?.weight).toFixed(6)).toBe(item.weight);
+      }
+    });
+
+    it('v_project_cost_summary cocok dengan total getProjectEstimate', async () => {
+      const estimate = await ahsp.getProjectEstimate(userId, projectId);
+      const [row] = await sql`
+        SELECT total_rab, total_rap, contract_value_derived, contract_value_difference, margin
+        FROM v_project_cost_summary WHERE project_id = ${projectId}
+      `;
+
+      expect(round2(row?.total_rab)).toBe(estimate.totals.totalRab);
+      expect(round2(row?.total_rap)).toBe(estimate.totals.totalRap);
+      expect(round2(row?.contract_value_derived)).toBe(estimate.totals.contractValue);
+      expect(round2(row?.contract_value_difference)).toBe(estimate.reconciliation.difference);
+      expect(round2(row?.margin)).toBe(estimate.totals.margin);
+    });
+
+    it('v_material_requirement menghitung kebutuhan pada koefisien RAP', async () => {
+      const rows = await sql`
+        SELECT resource_code, qty_required, value_rap
+        FROM v_material_requirement WHERE project_id = ${projectId}
+        ORDER BY resource_code
+      `;
+
+      // 100 m3 x 8 zak = 800 zak, senilai Rp38.400.000 pada RAP 48.000.
+      const cement = rows.find((r) => r.resource_code === 'M.01');
+      expect(Number(cement?.qty_required).toFixed(4)).toBe('800.0000');
+      expect(round2(cement?.value_rap)).toBe('38400000.00');
+
+      expect(rows).toHaveLength(ANALYSIS.length);
+    });
+
+    // The view resolves prices as of CURRENT_DATE; a price dated ahead must not
+    // be picked up early, exactly as selectEffectivePrice refuses it.
+    it('view mengabaikan harga yang belum berlaku', async () => {
+      await sql.unsafe(`
+        INSERT INTO resource_prices (resource_id, project_id, price_type, price, effective_from)
+        VALUES ((SELECT id FROM resources WHERE org_id = '${orgId}' AND code = 'M.01'),
+                NULL, 'RAP', 999999, CURRENT_DATE + 30)
+      `);
+
+      const [row] = await sql`
+        SELECT total_rap FROM v_work_item_cost WHERE work_item_id = ${workItemId}
+      `;
+      expect(round2(row?.total_rap)).toBe('107865000.00');
+    });
+
+    // A project override outranks the organisation default even when older.
+    it('view mendahulukan harga khusus proyek', async () => {
+      await sql.unsafe(`
+        INSERT INTO resource_prices (resource_id, project_id, price_type, price, effective_from)
+        VALUES ((SELECT id FROM resources WHERE org_id = '${orgId}' AND code = 'M.01'),
+                '${projectId}', 'RAP', 40000, '2026-01-01')
+      `);
+
+      const estimate = await ahsp.getWorkItemEstimate(userId, projectId, workItemId);
+      const [row] = await sql`
+        SELECT total_rap FROM v_work_item_cost WHERE work_item_id = ${workItemId}
+      `;
+
+      // 8 zak lebih murah Rp8.000 x 100 m3 = Rp6.400.000 lebih rendah.
+      expect(round2(row?.total_rap)).toBe('101465000.00');
+      expect(round2(row?.total_rap)).toBe(estimate.totalRap);
+    });
+  });
+
+  describe('template AHSP dan duplikasi', () => {
+    let templates: typeof AhspTemplatesModule;
+    let breakdown: typeof WorkBreakdownModule;
+
+    beforeAll(async () => {
+      [templates, breakdown] = await Promise.all([
+        import('../ahsp-templates'),
+        import('../work-breakdown'),
+      ]);
+    });
+
+    it('menyimpan analisa sebagai template lalu menerapkannya ke pekerjaan lain', async () => {
+      const template = await templates.saveTemplateFromWorkItem(user, projectId, workItemId, {
+        code: 'TPL.K225',
+        name: 'Beton K-225',
+      });
+
+      const target = await breakdown.createWorkItem(user, projectId, {
+        code: 'A.02',
+        name: 'Beton K-225 lantai 2',
+        spec: null,
+        groupId: null,
+        unitId: (await sql`SELECT unit_id FROM work_items WHERE id = ${workItemId}`)[0]!.unit_id,
+        volume: '50.0000',
+        contractUnitPrice: '1250000.00',
+        progressMethod: 'VOLUME',
+        includeInProgressWeight: true,
+        sortOrder: 1,
+      });
+
+      const applied = await templates.applyTemplate(user, projectId, target.id, template.id);
+      expect(applied.added).toBe(ANALYSIS.length);
+      expect(applied.skipped).toBe(0);
+
+      // Same unit rate, half the volume, so half the total.
+      const estimate = await ahsp.getWorkItemEstimate(userId, projectId, target.id);
+      expect(estimate.unitCostRap).toBe('1078650.00');
+      expect(estimate.totalRap).toBe('53932500.00');
+    });
+
+    it('melewati baris yang sudah ada alih-alih gagal di tengah', async () => {
+      const template = await templates.saveTemplateFromWorkItem(user, projectId, workItemId, {
+        code: 'TPL.DUP',
+        name: 'Uji duplikat',
+      });
+
+      const again = await templates.applyTemplate(user, projectId, workItemId, template.id);
+      expect(again.added).toBe(0);
+      expect(again.skipped).toBe(ANALYSIS.length);
+
+      const estimate = await ahsp.getWorkItemEstimate(userId, projectId, workItemId);
+      expect(estimate.lines).toHaveLength(ANALYSIS.length);
+    });
+
+    it('mode REPLACE mengganti seluruh analisa', async () => {
+      const template = await templates.saveTemplateFromWorkItem(user, projectId, workItemId, {
+        code: 'TPL.REP',
+        name: 'Uji ganti',
+      });
+
+      const replaced = await templates.applyTemplate(
+        user, projectId, workItemId, template.id, 'REPLACE',
+      );
+      expect(replaced.removed).toBe(ANALYSIS.length);
+      expect(replaced.added).toBe(ANALYSIS.length);
+
+      const estimate = await ahsp.getWorkItemEstimate(userId, projectId, workItemId);
+      expect(estimate.totalRap).toBe('107865000.00');
+    });
+
+    it('menolak menyimpan template dari pekerjaan tanpa analisa', async () => {
+      const empty = await breakdown.createWorkItem(user, projectId, {
+        code: 'A.99', name: 'Kosong', spec: null, groupId: null,
+        unitId: (await sql`SELECT unit_id FROM work_items WHERE id = ${workItemId}`)[0]!.unit_id,
+        volume: '1.0000', contractUnitPrice: null, progressMethod: 'VOLUME',
+        includeInProgressWeight: true, sortOrder: 9,
+      });
+
+      await expect(
+        templates.saveTemplateFromWorkItem(user, projectId, empty.id, {
+          code: 'TPL.KOSONG', name: 'Kosong',
+        }),
+      ).rejects.toThrow(/belum memiliki baris analisa/i);
+    });
+
+    it('menduplikasi pekerjaan beserta analisanya', async () => {
+      const copy = await breakdown.duplicateWorkItem(user, projectId, workItemId, {
+        code: 'A.01-COPY',
+        name: 'Beton K-225 (salinan)',
+      });
+
+      const original = await ahsp.getWorkItemEstimate(userId, projectId, workItemId);
+      const duplicated = await ahsp.getWorkItemEstimate(userId, projectId, copy.id);
+
+      expect(duplicated.lines).toHaveLength(original.lines.length);
+      expect(duplicated.totalRap).toBe(original.totalRap);
+      expect(duplicated.contractValue).toBe(original.contractValue);
+    });
+
+    // Progress and stock belong to the original; copying them would fabricate
+    // history for work that has not been done.
+    it('duplikasi tidak membawa serta catatan lapangan', async () => {
+      const copy = await breakdown.duplicateWorkItem(user, projectId, workItemId, {
+        code: 'A.01-COPY2',
+        name: 'Salinan kedua',
+      });
+
+      const impact = await breakdown.getWorkItemDeletionImpact(userId, projectId, copy.id);
+      expect(impact.progressEntries).toBe(0);
+      expect(impact.materialTransactions).toBe(0);
+      expect(impact.ahspLines).toBe(ANALYSIS.length);
+    });
+
+    it('menolak kode duplikat saat menyalin', async () => {
+      await expect(
+        breakdown.duplicateWorkItem(user, projectId, workItemId, {
+          code: 'A.01',
+          name: 'Bentrok',
+        }),
+      ).rejects.toThrow(/sudah dipakai/i);
     });
   });
 });

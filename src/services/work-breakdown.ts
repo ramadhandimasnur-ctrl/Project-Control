@@ -191,16 +191,18 @@ export type WorkItemRow = {
 export async function listWorkItems(userId: string, projectId: string): Promise<WorkItemRow[]> {
   await assertProjectAccess(userId, projectId, 'VIEWER');
 
+  // Each CTE needs its own column alias. Two CTEs both exposing "total" make
+  // the outer references ambiguous, and Postgres rejects the whole query.
   const lines = db.$with('line_counts').as(
     db
-      .select({ workItemId: workItemResources.workItemId, total: count().as('total') })
+      .select({ workItemId: workItemResources.workItemId, lineTotal: count().as('line_total') })
       .from(workItemResources)
       .groupBy(workItemResources.workItemId),
   );
 
   const takeoffs = db.$with('takeoff_counts').as(
     db
-      .select({ workItemId: volumeTakeoffs.workItemId, total: count().as('total') })
+      .select({ workItemId: volumeTakeoffs.workItemId, takeoffTotal: count().as('takeoff_total') })
       .from(volumeTakeoffs)
       .groupBy(volumeTakeoffs.workItemId),
   );
@@ -222,8 +224,8 @@ export async function listWorkItems(userId: string, projectId: string): Promise<
       includeInProgressWeight: workItems.includeInProgressWeight,
       sortOrder: workItems.sortOrder,
       isActive: workItems.isActive,
-      lineCount: lines.total,
-      takeoffCount: takeoffs.total,
+      lineCount: lines.lineTotal,
+      takeoffCount: takeoffs.takeoffTotal,
     })
     .from(workItems)
     .innerJoin(units, eq(units.id, workItems.unitId))
@@ -384,6 +386,121 @@ export async function deleteWorkItem(
       actorId: user.id,
     });
     await tx.delete(workItems).where(eq(workItems.id, workItemId));
+  });
+}
+
+export type DuplicateOptions = {
+  code: string;
+  name: string;
+  /** Copy the volume take-off rows too, and with them the derived volume. */
+  includeTakeoffs?: boolean;
+};
+
+/**
+ * Copies a work item together with its analysis.
+ *
+ * What is deliberately not copied: progress entries, material movements and
+ * schedule rows. Those record what happened to the original, and carrying them
+ * over would fabricate history for a work item that has not been built yet.
+ */
+export async function duplicateWorkItem(
+  user: SessionUser,
+  projectId: string,
+  workItemId: string,
+  options: DuplicateOptions,
+): Promise<{ id: string }> {
+  const access = await assertProjectAccess(user.id, projectId, 'ENGINEER');
+  const source = await getWorkItem(user.id, projectId, workItemId);
+  await assertItemCodeAvailable(projectId, options.code, null);
+
+  const [lines, takeoffRows] = await Promise.all([
+    db
+      .select({
+        resourceId: workItemResources.resourceId,
+        role: workItemResources.role,
+        coefRab: workItemResources.coefRab,
+        coefRap: workItemResources.coefRap,
+        wasteFactor: workItemResources.wasteFactor,
+        note: workItemResources.note,
+        sortOrder: workItemResources.sortOrder,
+      })
+      .from(workItemResources)
+      .where(eq(workItemResources.workItemId, workItemId)),
+    options.includeTakeoffs
+      ? db
+          .select({
+            label: volumeTakeoffs.label,
+            expression: volumeTakeoffs.expression,
+            qty: volumeTakeoffs.qty,
+            note: volumeTakeoffs.note,
+            sortOrder: volumeTakeoffs.sortOrder,
+          })
+          .from(volumeTakeoffs)
+          .where(eq(volumeTakeoffs.workItemId, workItemId))
+      : Promise.resolve([]),
+  ]);
+
+  return withUser(user.id, async (tx) => {
+    const [created] = await tx
+      .insert(workItems)
+      .values({
+        projectId,
+        groupId: source.groupId,
+        code: options.code,
+        name: options.name,
+        spec: source.spec,
+        unitId: source.unitId,
+        volume: source.volume,
+        contractUnitPrice: source.contractUnitPrice,
+        progressMethod: source.progressMethod,
+        includeInProgressWeight: source.includeInProgressWeight,
+        sortOrder: source.sortOrder,
+        createdBy: user.id,
+        updatedBy: user.id,
+      })
+      .returning({ id: workItems.id });
+
+    if (!created) throw conflict('Duplikat pekerjaan gagal dibuat.');
+
+    if (lines.length > 0) {
+      await tx.insert(workItemResources).values(
+        lines.map((line) => ({
+          ...line,
+          workItemId: created.id,
+          createdBy: user.id,
+          updatedBy: user.id,
+        })),
+      );
+    }
+
+    if (takeoffRows.length > 0) {
+      await tx.insert(volumeTakeoffs).values(
+        takeoffRows.map((row) => ({
+          ...row,
+          workItemId: created.id,
+          createdBy: user.id,
+          updatedBy: user.id,
+        })),
+      );
+    }
+
+    await writeAuditLog(tx, {
+      orgId: access.orgId,
+      projectId,
+      tableName: 'work_items',
+      recordId: created.id,
+      action: 'INSERT',
+      after: {
+        duplicatedFrom: workItemId,
+        code: options.code,
+        name: options.name,
+        ahspLines: lines.length,
+        takeoffs: takeoffRows.length,
+      },
+      actorId: user.id,
+    });
+
+    return { id: created.id };
   });
 }
 

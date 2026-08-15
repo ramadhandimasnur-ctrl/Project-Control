@@ -80,10 +80,22 @@ export default async function ProjectsPage() {
             </TableHeader>
             <TableBody>
               {projects.map((project) => (
-                <TableRow key={project.id}>
+                /*
+                 * The whole row is a click target, but only one real link.
+                 * The anchor's ::after is stretched across the positioned row,
+                 * so keyboard and screen-reader users get a single focusable
+                 * destination instead of one per cell.
+                 */
+                <TableRow
+                  key={project.id}
+                  className="relative cursor-pointer transition-colors hover:bg-accent/50 focus-within:bg-accent/50"
+                >
                   <TableCell className="font-mono text-xs">{project.code}</TableCell>
                   <TableCell className="font-medium">
-                    <Link href={`/projects/${project.id}`} className="hover:underline">
+                    <Link
+                      href={`/projects/${project.id}`}
+                      className="after:absolute after:inset-0 after:content-[''] hover:underline focus-visible:outline-none"
+                    >
                       {project.name}
                     </Link>
                   </TableCell>
