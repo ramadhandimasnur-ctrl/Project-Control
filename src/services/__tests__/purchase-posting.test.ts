@@ -435,4 +435,139 @@ describe.skipIf(!ready)('POST pembelian', () => {
       ).rejects.toThrow(/berasal dari pembelian/i);
     });
   });
+
+  /**
+   * views.sql promises each view ships with a test asserting it agrees with
+   * the pure function it mirrors. The moving-average view is recursive, so
+   * this is where that promise is worth the most.
+   */
+  describe('view SQL sepakat dengan lib/calc', () => {
+    const round = (v: unknown, dp: number) => Number(v).toFixed(dp);
+
+    it('v_inventory_moving_cost cocok dengan getStockPosition', async () => {
+      await purchasesSvc.postPurchase(user, projectId, (await draft('100', '15500')).id);
+      await purchasesSvc.postPurchase(user, projectId, (await draft('100', '16200')).id);
+
+      const position = await movements.getStockPosition(userId, projectId, resourceId, warehouseId);
+      const [row] = await sql`
+        SELECT qty_on_hand, moving_average_cost, stock_value
+        FROM v_inventory_moving_cost
+        WHERE project_id = ${projectId} AND resource_id = ${resourceId}
+      `;
+
+      expect(round(row?.qty_on_hand, 4)).toBe(position.qty);
+      expect(round(row?.moving_average_cost, 2)).toBe(position.averageCost);
+      expect(round(row?.stock_value, 2)).toBe(position.value);
+    });
+
+    /*
+     * The case a plain aggregate gets wrong. An issue between the two receipts
+     * lowers the balance the second receipt averages against, so the answer is
+     * 15.966,67 rather than the 15.850 that Σ(qty×price)/Σqty would give.
+     */
+    it('memperhitungkan pengeluaran di antara dua penerimaan', async () => {
+      await purchasesSvc.postPurchase(user, projectId, (await draft('100', '15500')).id);
+
+      await movements.recordMovement(user, projectId, {
+        txnType: 'OUT',
+        txnDate: '2026-03-02',
+        resourceId,
+        warehouseId,
+        qty: '50',
+        unitId: kgUnitId,
+        workItemId,
+      });
+
+      await purchasesSvc.saveDraftPurchase(
+        user,
+        projectId,
+        null,
+        { purchaseDate: '2026-03-03', invoiceNo: 'INV-002', vatAmount: '0' },
+        [{ resourceId, warehouseId, qty: '100', unitId: kgUnitId, unitPrice: '16200' }],
+      ).then((p) => purchasesSvc.postPurchase(user, projectId, p.id));
+
+      const position = await movements.getStockPosition(userId, projectId, resourceId, warehouseId);
+      const [row] = await sql`
+        SELECT qty_on_hand, moving_average_cost FROM v_inventory_moving_cost
+        WHERE project_id = ${projectId} AND resource_id = ${resourceId}
+      `;
+
+      expect(position.averageCost).toBe('15966.67');
+      expect(round(row?.moving_average_cost, 2)).toBe('15966.67');
+      expect(round(row?.qty_on_hand, 4)).toBe('150.0000');
+    });
+
+    it('v_inventory_balance memisahkan masuk, keluar, dan penyesuaian', async () => {
+      await purchasesSvc.postPurchase(user, projectId, (await draft('100', '15500')).id);
+      await movements.recordMovement(user, projectId, {
+        txnType: 'OUT', txnDate: '2026-03-05', resourceId, warehouseId,
+        qty: '30', unitId: kgUnitId, workItemId,
+      });
+      await movements.recordMovement(user, projectId, {
+        txnType: 'ADJUSTMENT', txnDate: '2026-03-06', resourceId, warehouseId,
+        qty: '-2', unitId: kgUnitId,
+      });
+
+      const [row] = await sql`
+        SELECT qty_received, qty_issued, qty_adjusted, qty_on_hand, resource_code
+        FROM v_inventory_balance
+        WHERE project_id = ${projectId} AND resource_id = ${resourceId}
+      `;
+
+      expect(row?.resource_code).toBe('M.04');
+      expect(round(row?.qty_received, 0)).toBe('100');
+      expect(round(row?.qty_issued, 0)).toBe('30');
+      expect(round(row?.qty_adjusted, 0)).toBe('-2');
+      expect(round(row?.qty_on_hand, 0)).toBe('68');
+    });
+
+    it('mengeluarkan mutasi yang dibatalkan dari saldo', async () => {
+      const purchase = await draft('100', '15500');
+      await purchasesSvc.postPurchase(user, projectId, purchase.id);
+      await purchasesSvc.voidPurchase(user, projectId, purchase.id, 'retur');
+
+      const rows = await sql`
+        SELECT qty_on_hand FROM v_inventory_moving_cost
+        WHERE project_id = ${projectId} AND resource_id = ${resourceId}
+      `;
+      expect(rows).toHaveLength(0);
+    });
+
+    it('v_resource_actual_price menghitung varians terhadap RAP', async () => {
+      await sql.unsafe(`
+        INSERT INTO resource_prices (resource_id, project_id, price_type, price, effective_from)
+        VALUES ('${resourceId}', NULL, 'RAP', 15500, '2026-01-01')
+      `);
+
+      await purchasesSvc.postPurchase(user, projectId, (await draft('100', '15500')).id);
+      await purchasesSvc.postPurchase(user, projectId, (await draft('100', '16200')).id);
+
+      const [row] = await sql`
+        SELECT average_price, min_price, max_price, last_price,
+               variance_per_unit, variance_percent, variance_value, purchase_count
+        FROM v_resource_actual_price
+        WHERE project_id = ${projectId} AND resource_id = ${resourceId}
+      `;
+
+      // The charter's example: average 15.850 against RAP 15.500 is +350 (+2,26%).
+      expect(round(row?.average_price, 2)).toBe('15850.00');
+      expect(round(row?.variance_per_unit, 2)).toBe('350.00');
+      expect(round(Number(row?.variance_percent) * 100, 2)).toBe('2.26');
+      expect(round(row?.variance_value, 2)).toBe('70000.00');
+      expect(round(row?.min_price, 0)).toBe('15500');
+      expect(round(row?.max_price, 0)).toBe('16200');
+      expect(Number(row?.purchase_count)).toBe(2);
+    });
+
+    // A draft is an intention, not a price.
+    it('mengabaikan pembelian yang belum di-POST', async () => {
+      await draft('100', '99999');
+
+      const rows = await sql`
+        SELECT * FROM v_resource_actual_price
+        WHERE project_id = ${projectId} AND resource_id = ${resourceId}
+      `;
+      expect(rows).toHaveLength(0);
+    });
+  });
 });

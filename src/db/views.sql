@@ -246,8 +246,242 @@ COMMENT ON VIEW v_material_requirement IS
   'Kebutuhan total per sumber daya pada koefisien RAP. Cermin SQL dari lib/calc/material.ts.';
 
 -- ---------------------------------------------------------------------------
+-- v_inventory_moving_cost — stock and weighted average cost per
+-- (project, warehouse, resource).
+--
+-- Recursive because the average genuinely is. An issue is valued at whatever
+-- average is in force at that moment, which leaves the average unchanged but
+-- lowers the balance — so a later receipt averages against a smaller quantity.
+-- That makes the result depend on the order of the movements, and no plain
+-- aggregate can express it:
+--
+--   IN 100@15.500, OUT 50, IN 100@16.200  →  15.966,67
+--   the same two receipts without the issue →  15.850
+--
+-- The recursion mirrors `replayLedger` in lib/calc/inventory.ts step for step,
+-- and a test asserts the two agree.
+-- ---------------------------------------------------------------------------
+DROP VIEW IF EXISTS v_resource_actual_price CASCADE;
+DROP VIEW IF EXISTS v_inventory_balance CASCADE;
+DROP VIEW IF EXISTS v_inventory_moving_cost CASCADE;
+
+CREATE VIEW v_inventory_moving_cost WITH (security_invoker = true) AS
+WITH RECURSIVE ordered AS (
+  SELECT
+    mt.project_id,
+    mt.warehouse_id,
+    mt.resource_id,
+    row_number() OVER (
+      PARTITION BY mt.project_id, mt.warehouse_id, mt.resource_id
+      ORDER BY mt.txn_date, mt.created_at, mt.id
+    ) AS seq,
+    -- ADJUSTMENT carries its own sign; everything else takes it from the type.
+    CASE
+      WHEN mt.txn_type = 'ADJUSTMENT' THEN mt.qty
+      WHEN mt.txn_type IN ('OUT', 'TRANSFER') THEN -abs(mt.qty)
+      ELSE abs(mt.qty)
+    END AS delta,
+    mt.unit_cost
+  FROM material_transactions mt
+  WHERE mt.is_void = false
+),
+replay AS (
+  SELECT
+    o.project_id,
+    o.warehouse_id,
+    o.resource_id,
+    o.seq,
+    o.delta AS qty,
+    CASE
+      WHEN o.delta > 0 AND o.unit_cost IS NOT NULL THEN o.delta * o.unit_cost
+      ELSE o.delta * coalesce(o.unit_cost, 0)
+    END AS value,
+    CASE
+      WHEN o.delta > 0 AND o.unit_cost IS NOT NULL THEN o.unit_cost
+      ELSE 0
+    END AS avg_cost
+  FROM ordered o
+  WHERE o.seq = 1
+
+  UNION ALL
+
+  SELECT
+    o.project_id,
+    o.warehouse_id,
+    o.resource_id,
+    o.seq,
+    s.next_qty,
+    -- A balance back at zero holds no value, only a remembered price.
+    CASE WHEN s.next_qty = 0 THEN 0 ELSE s.next_value END,
+    s.next_avg
+  FROM replay r
+  JOIN ordered o
+    ON o.project_id = r.project_id
+   AND o.warehouse_id = r.warehouse_id
+   AND o.resource_id = r.resource_id
+   AND o.seq = r.seq + 1
+  CROSS JOIN LATERAL (
+    SELECT
+      r.qty + o.delta AS next_qty,
+      CASE
+        WHEN o.delta > 0 AND o.unit_cost IS NOT NULL
+          THEN r.value + o.delta * o.unit_cost
+        ELSE r.value + o.delta * coalesce(o.unit_cost, r.avg_cost)
+      END AS next_value,
+      CASE
+        WHEN o.delta > 0 AND o.unit_cost IS NOT NULL THEN
+          CASE
+            WHEN r.qty + o.delta = 0 THEN o.unit_cost
+            ELSE (r.value + o.delta * o.unit_cost) / (r.qty + o.delta)
+          END
+        -- Issues and quantity-only adjustments move stock, not its worth.
+        ELSE r.avg_cost
+      END AS next_avg
+  ) s
+)
+SELECT DISTINCT ON (project_id, warehouse_id, resource_id)
+  project_id,
+  warehouse_id,
+  resource_id,
+  qty            AS qty_on_hand,
+  avg_cost       AS moving_average_cost,
+  value          AS stock_value,
+  seq            AS movement_count
+FROM replay
+ORDER BY project_id, warehouse_id, resource_id, seq DESC;
+
+COMMENT ON VIEW v_inventory_moving_cost IS
+  'Stok dan harga rata-rata bergerak per gudang. Cermin SQL dari lib/calc/inventory.ts.';
+
+-- ---------------------------------------------------------------------------
+-- v_inventory_balance — the same position with names attached, plus the
+-- received/issued split the warehouse screen shows.
+-- ---------------------------------------------------------------------------
+CREATE VIEW v_inventory_balance WITH (security_invoker = true) AS
+WITH totals AS (
+  SELECT
+    mt.project_id,
+    mt.warehouse_id,
+    mt.resource_id,
+    sum(mt.qty) FILTER (WHERE mt.txn_type IN ('IN', 'RETURN'))        AS qty_received,
+    sum(mt.qty) FILTER (WHERE mt.txn_type IN ('OUT', 'TRANSFER'))     AS qty_issued,
+    sum(mt.qty) FILTER (WHERE mt.txn_type = 'ADJUSTMENT')             AS qty_adjusted,
+    max(mt.txn_date)                                                  AS last_movement_date
+  FROM material_transactions mt
+  WHERE mt.is_void = false
+  GROUP BY mt.project_id, mt.warehouse_id, mt.resource_id
+)
+SELECT
+  c.project_id,
+  c.warehouse_id,
+  w.name                              AS warehouse_name,
+  c.resource_id,
+  r.code                              AS resource_code,
+  r.name                              AS resource_name,
+  r.type                              AS resource_type,
+  u.code                              AS unit_code,
+  c.qty_on_hand,
+  c.moving_average_cost,
+  c.stock_value,
+  coalesce(t.qty_received, 0)         AS qty_received,
+  coalesce(t.qty_issued, 0)           AS qty_issued,
+  coalesce(t.qty_adjusted, 0)         AS qty_adjusted,
+  t.last_movement_date,
+  c.movement_count
+FROM v_inventory_moving_cost c
+JOIN warehouses w ON w.id = c.warehouse_id
+JOIN resources r ON r.id = c.resource_id
+JOIN units u ON u.id = r.unit_id
+LEFT JOIN totals t
+  ON t.project_id = c.project_id
+ AND t.warehouse_id = c.warehouse_id
+ AND t.resource_id = c.resource_id;
+
+COMMENT ON VIEW v_inventory_balance IS
+  'Saldo stok per (proyek, gudang, sumber daya) beserta rincian masuk/keluar.';
+
+-- ---------------------------------------------------------------------------
+-- v_resource_actual_price — what a resource has really cost, against plan.
+--
+-- The average is weighted by quantity: a one-sack trial order must not shift
+-- the figure the way a lorry-load does. Only POSTED purchases count; a draft
+-- is an intention, not a price.
+-- ---------------------------------------------------------------------------
+CREATE VIEW v_resource_actual_price WITH (security_invoker = true) AS
+WITH bought AS (
+  SELECT
+    p.project_id,
+    pi.resource_id,
+    sum(pi.qty)                                   AS total_qty,
+    sum(pi.amount)                                AS total_value,
+    min(pi.unit_price)                            AS min_price,
+    max(pi.unit_price)                            AS max_price,
+    count(*)::int                                 AS purchase_count,
+    max(p.purchase_date)                          AS last_purchase_date
+  FROM purchase_items pi
+  JOIN purchases p ON p.id = pi.purchase_id
+  WHERE p.status = 'POSTED'
+  GROUP BY p.project_id, pi.resource_id
+)
+SELECT
+  b.project_id,
+  b.resource_id,
+  r.code                                          AS resource_code,
+  r.name                                          AS resource_name,
+  u.code                                          AS unit_code,
+  b.total_qty,
+  b.total_value,
+  b.purchase_count,
+  b.last_purchase_date,
+  b.min_price,
+  b.max_price,
+  CASE WHEN b.total_qty = 0 THEN NULL ELSE b.total_value / b.total_qty END AS average_price,
+  last_buy.unit_price                             AS last_price,
+  rap.price                                       AS price_rap,
+  -- Variance is null rather than misleading when either side is unknown.
+  CASE
+    WHEN b.total_qty = 0 OR rap.price IS NULL THEN NULL
+    ELSE (b.total_value / b.total_qty) - rap.price
+  END                                             AS variance_per_unit,
+  CASE
+    WHEN b.total_qty = 0 OR rap.price IS NULL OR rap.price = 0 THEN NULL
+    ELSE ((b.total_value / b.total_qty) - rap.price) / rap.price
+  END                                             AS variance_percent,
+  CASE
+    WHEN rap.price IS NULL THEN NULL
+    ELSE b.total_value - (b.total_qty * rap.price)
+  END                                             AS variance_value
+FROM bought b
+JOIN resources r ON r.id = b.resource_id
+JOIN units u ON u.id = r.unit_id
+LEFT JOIN LATERAL (
+  SELECT pi.unit_price
+  FROM purchase_items pi
+  JOIN purchases p ON p.id = pi.purchase_id
+  WHERE pi.resource_id = b.resource_id
+    AND p.project_id = b.project_id
+    AND p.status = 'POSTED'
+  ORDER BY p.purchase_date DESC, p.created_at DESC
+  LIMIT 1
+) last_buy ON true
+LEFT JOIN LATERAL (
+  SELECT rp.price
+  FROM resource_prices rp
+  WHERE rp.resource_id = b.resource_id
+    AND rp.price_type = 'RAP'
+    AND rp.effective_from <= CURRENT_DATE
+    AND (rp.project_id IS NULL OR rp.project_id = b.project_id)
+  ORDER BY (rp.project_id IS NOT NULL) DESC, rp.effective_from DESC, rp.id DESC
+  LIMIT 1
+) rap ON true;
+
+COMMENT ON VIEW v_resource_actual_price IS
+  'Harga beli aktual per sumber daya beserta variansnya terhadap RAP.';
+
+-- ---------------------------------------------------------------------------
 -- The application connects as app_runtime inside request transactions, so it
 -- needs read access to everything defined above.
 -- ---------------------------------------------------------------------------
 GRANT SELECT ON v_work_item_cost, v_work_item_weight, v_project_cost_summary,
-                v_material_requirement TO app_runtime;
+                v_material_requirement, v_inventory_moving_cost,
+                v_inventory_balance, v_resource_actual_price TO app_runtime;
