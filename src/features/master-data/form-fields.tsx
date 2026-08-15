@@ -1,5 +1,6 @@
 'use client';
 
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -111,6 +112,56 @@ export function TextAreaField({
         aria-invalid={Boolean(error)}
         aria-describedby={error ? `${id}-error` : undefined}
         {...registration}
+      />
+    </FieldShell>
+  );
+}
+
+/**
+ * Searchable select wired to react-hook-form.
+ *
+ * `register()` cannot be used here because the control is not a native form
+ * element, so the value is driven by the caller through `value`/`onChange` —
+ * usually from a `Controller`. Clearing the selection yields '', which
+ * `optionalId`/`requiredId` in lib/validation/common already normalise.
+ */
+export function ComboboxField({
+  id,
+  label,
+  hint,
+  error,
+  options,
+  value,
+  onChange,
+  placeholder,
+  searchPlaceholder,
+  emptyMessage,
+  disabled,
+}: {
+  id: string;
+  label: string;
+  hint?: string;
+  error?: string;
+  options: ComboboxOption[];
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  searchPlaceholder?: string;
+  emptyMessage?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <FieldShell htmlFor={id} label={label} hint={hint} error={error}>
+      <Combobox
+        id={id}
+        options={options}
+        value={value}
+        onValueChange={onChange}
+        invalid={Boolean(error)}
+        disabled={disabled}
+        {...(placeholder ? { placeholder } : {})}
+        {...(searchPlaceholder ? { searchPlaceholder } : {})}
+        {...(emptyMessage ? { emptyMessage } : {})}
       />
     </FieldShell>
   );

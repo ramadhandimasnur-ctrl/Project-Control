@@ -3,8 +3,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useMemo, useState } from 'react';
+import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -17,7 +17,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { SelectField, TextAreaField, TextField } from '@/features/master-data/form-fields';
+import {
+  ComboboxField,
+  SelectField,
+  TextAreaField,
+  TextField,
+} from '@/features/master-data/form-fields';
 import {
   AHSP_LINE_FORM_DEFAULTS,
   AHSP_ROLE_LABELS,
@@ -59,12 +64,26 @@ export function AhspLineDialog({
 
   const {
     register,
+    control,
     handleSubmit,
     setError,
     watch,
     setValue,
     formState: { errors, isSubmitting },
   } = form;
+
+  // Built once per resource list so typing does not rebuild 379 objects.
+  const resourceOptions = useMemo(
+    () =>
+      resources.map((r) => ({
+        value: r.id,
+        code: r.code,
+        label: r.name,
+        ...(r.spec ? { description: r.spec } : {}),
+        meta: r.unitCode,
+      })),
+    [resources],
+  );
 
   const messageOf = (field: keyof AhspLineFormInput): string | undefined => {
     const entry = errors[field];
@@ -115,17 +134,31 @@ export function AhspLineDialog({
             </Alert>
           ) : null}
 
-          <SelectField
-            id="resourceId"
-            label="Sumber daya"
-            error={messageOf('resourceId')}
-            registration={register('resourceId')}
-            placeholder="Pilih sumber daya"
-            options={resources.map((r) => ({
-              value: r.id,
-              label: `${r.code} — ${r.name}${r.spec ? ` (${r.spec})` : ''}`,
-            }))}
-            hint={selected ? `Satuan: ${selected.unitCode}` : undefined}
+          {/*
+            Controller rather than register: the combobox is not a native form
+            element, so react-hook-form drives it by value instead of by ref.
+          */}
+          <Controller
+            control={control}
+            name="resourceId"
+            render={({ field }) => (
+              <ComboboxField
+                id="resourceId"
+                label="Sumber daya"
+                error={messageOf('resourceId')}
+                value={field.value ?? ''}
+                onChange={field.onChange}
+                placeholder="Pilih sumber daya"
+                searchPlaceholder="Ketik kode atau nama, misal: M.24 atau besi"
+                emptyMessage="Tidak ada sumber daya yang cocok."
+                options={resourceOptions}
+                hint={
+                  selected
+                    ? `Satuan: ${selected.unitCode}`
+                    : `${resources.length} sumber daya tersedia. Ketik untuk menyaring.`
+                }
+              />
+            )}
           />
 
           <SelectField
