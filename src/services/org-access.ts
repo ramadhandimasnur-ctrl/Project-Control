@@ -3,8 +3,8 @@ import 'server-only';
 import { eq } from 'drizzle-orm';
 
 import { db } from '@/db';
-import { users } from '@/db/schema';
-import { type GlobalRole } from '@/lib/auth/roles';
+import { projectMembers, users } from '@/db/schema';
+import { canViewCosts, type GlobalRole } from '@/lib/auth/roles';
 import { forbidden, unauthenticated } from '@/lib/errors';
 
 export type OrgAccess = {
@@ -50,4 +50,28 @@ export async function assertOrgAccess(
   }
 
   return { userId: user.id, orgId: user.orgId, globalRole: user.globalRole };
+}
+
+/**
+ * Whether the price book may be shown to this user at all.
+ *
+ * `canViewCosts` is a project role test, but the catalogue belongs to the
+ * organisation, so there is no single project to ask about. A user who is a
+ * FIELD_USER everywhere they are a member must not see prices here either —
+ * otherwise the rule that hides costs from the site team is undone by a link
+ * in the navigation.
+ *
+ * Charter rule 7: the columns are dropped on the server, not hidden with CSS.
+ */
+export async function canViewOrgCosts(userId: string): Promise<boolean> {
+  const access = await assertOrgAccess(userId);
+  if (access.globalRole === 'ADMIN') return true;
+
+  const memberships = await db
+    .select({ role: projectMembers.role })
+    .from(projectMembers)
+    .where(eq(projectMembers.userId, userId));
+
+  // No membership at all: nothing to reveal, and nothing to justify revealing.
+  return memberships.some((m) => canViewCosts(m.role));
 }

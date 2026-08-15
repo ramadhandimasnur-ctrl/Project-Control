@@ -20,6 +20,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </span>
             <span className="hidden sm:inline">Project Control</span>
           </Link>
+
+          <nav aria-label="Navigasi utama" className="flex items-center gap-1 text-sm">
+            <Link
+              href="/projects"
+              className="rounded-md px-2 py-1.5 text-foreground/80 transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              Proyek
+            </Link>
+            <Link
+              href="/master-data/resources"
+              className="rounded-md px-2 py-1.5 text-foreground/80 transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              Master Data
+            </Link>
+          </nav>
+
           <div className="ml-auto">
             <UserMenu fullName={user.fullName} email={user.email} globalRole={user.globalRole} />
           </div>

@@ -16,7 +16,7 @@ import {
 import { type PriceType } from '@/lib/calc/price';
 import { conflict, notFound, validation } from '@/lib/errors';
 
-import { assertOrgAccess } from './org-access';
+import { assertOrgAccess, canViewOrgCosts } from './org-access';
 import { writeAuditLog } from './audit';
 import { resolvePriceMap } from './prices';
 import { type SessionUser } from './session';
@@ -64,7 +64,7 @@ function today(): string {
 export async function listResources(
   userId: string,
   input: ListResourcesInput = {},
-): Promise<{ items: ResourceListItem[]; total: number }> {
+): Promise<{ items: ResourceListItem[]; total: number; showCosts: boolean }> {
   const access = await assertOrgAccess(userId);
 
   const limit = Math.min(Math.max(input.limit ?? 50, 1), 500);
@@ -111,6 +111,19 @@ export async function listResources(
     .limit(limit)
     .offset(offset);
 
+  // Charter rule 7: a user who may not see costs never receives them, rather
+  // than receiving them and having the column hidden in the browser.
+  // `showCosts` is returned rather than inferred by the caller: a catalogue
+  // that simply has no prices yet must not look like a permission denial.
+  const showCosts = await canViewOrgCosts(userId);
+  if (!showCosts) {
+    return {
+      showCosts,
+      total: totalRow?.value ?? 0,
+      items: rows.map((r) => ({ ...r, priceRab: null, priceRap: null })),
+    };
+  }
+
   const ids = rows.map((r) => r.id);
   const [rab, rap] = await Promise.all([
     resolvePriceMap(ids, projectId, 'RAB', onDate),
@@ -118,6 +131,7 @@ export async function listResources(
   ]);
 
   return {
+    showCosts,
     total: totalRow?.value ?? 0,
     items: rows.map((r) => ({
       ...r,

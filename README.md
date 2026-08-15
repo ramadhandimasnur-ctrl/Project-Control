@@ -14,7 +14,7 @@ tidak ada angka contoh yang di-hardcode.
 | Fase | Isi | Status |
 |---|---|---|
 | 1 | Skema DB penuh, auth, CRUD proyek, anggota & otorisasi, layout, seed demo | **Selesai** |
-| 2 | Master data: satuan, kategori, resource, harga, supplier, impor Excel | Belum |
+| 2 | Master data: satuan, kategori, resource, harga, supplier, impor Excel | **Selesai** |
 | 3 | Work breakdown, volume take-off, AHSP, RAB/RAP, template | Belum |
 | 4 | Kebutuhan material, gudang, pembelian + POST transaksional | Belum |
 | 5 | Periode, jadwal, Gantt, baseline, kurva-S rencana | Belum |
@@ -105,6 +105,8 @@ npm run dev
 | `npm run db:views` | Terapkan trigger, RLS, dan view |
 | `npm run db:setup` | `db:migrate` + `db:views` |
 | `npm run db:seed` | Isi data demo |
+| `npm run db:import:utba -- "<file.xlsx>" --email=<admin>` | Baca sheet UTBA tanpa menyimpan |
+| `npm run db:import:utba -- "<file.xlsx>" --email=<admin> --apply` | Impor sumber daya ke katalog |
 | `npm run db:reset -- --force` | **Hapus seluruh schema public.** Hanya untuk pengembangan |
 | `npm run db:studio` | Drizzle Studio |
 
