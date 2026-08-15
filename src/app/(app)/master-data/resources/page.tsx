@@ -1,10 +1,14 @@
-import { PackageSearch } from 'lucide-react';
+import { FileSpreadsheet, PackageSearch } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ResourceCreateButton } from '@/features/master-data/resource-create-button';
+import { assertOrgAccess } from '@/services/org-access';
+import { listUnits } from '@/services/units';
 import {
   Table,
   TableBody,
@@ -51,7 +55,7 @@ export default async function ResourcesPage({
   const search = params.q?.trim() ?? '';
   const type = parseType(params.type);
 
-  const [{ items, total, showCosts }, categories] = await Promise.all([
+  const [{ items, total, showCosts }, categories, units, access] = await Promise.all([
     listResources(user.id, {
       search: search === '' ? undefined : search,
       ...(type ? { type } : {}),
@@ -60,7 +64,11 @@ export default async function ResourcesPage({
       offset: (page - 1) * PAGE_SIZE,
     }),
     listCategories(user.id),
+    listUnits(user.id),
+    assertOrgAccess(user.id),
   ]);
+
+  const canManage = access.globalRole === 'ADMIN';
 
   const filtered = search !== '' || type !== undefined || params.category !== undefined;
 
@@ -69,6 +77,21 @@ export default async function ResourcesPage({
       <PageHeader
         title="Sumber Daya"
         description={`${total.toLocaleString('id-ID')} item dalam katalog organisasi.`}
+        actions={
+          canManage ? (
+            <>
+              <Button variant="outline" render={<Link href="/master-data/import" />}>
+                <FileSpreadsheet className="size-4" aria-hidden />
+                Impor Excel
+              </Button>
+              <ResourceCreateButton
+                units={units.map((u) => ({ id: u.id, code: u.code, name: u.name }))}
+                categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+                canManage={canManage}
+              />
+            </>
+          ) : null
+        }
       />
 
       <ResourceFilters

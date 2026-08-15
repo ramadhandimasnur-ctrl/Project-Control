@@ -16,12 +16,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { ResourceDetailActions } from '@/features/master-data/resource-detail-actions';
 import { isAppError } from '@/lib/errors';
 import { EMPTY_VALUE, formatCurrency, formatDay } from '@/lib/format';
-import { canViewOrgCosts } from '@/services/org-access';
+import { assertOrgAccess, canViewOrgCosts } from '@/services/org-access';
 import { listPriceHistory } from '@/services/prices';
+import { listCategories } from '@/services/resource-categories';
 import { countResourceUsage, getResource } from '@/services/resources';
 import { requireSessionUser } from '@/services/session';
+import { listUnits } from '@/services/units';
 
 export const metadata: Metadata = { title: 'Detail Sumber Daya' };
 
@@ -48,10 +51,15 @@ export default async function ResourceDetailPage({
   });
 
   const showCosts = await canViewOrgCosts(user.id);
-  const [history, usage] = await Promise.all([
+  const [history, usage, units, categories, access] = await Promise.all([
     showCosts ? listPriceHistory(user.id, id) : Promise.resolve([]),
     countResourceUsage(id),
+    listUnits(user.id),
+    listCategories(user.id),
+    assertOrgAccess(user.id),
   ]);
+
+  const canManage = access.globalRole === 'ADMIN';
 
   const facts: { label: string; value: string }[] = [
     { label: 'Kode', value: resource.code },
@@ -80,7 +88,30 @@ export default async function ResourceDetailPage({
         title={resource.name}
         description={resource.spec ?? undefined}
         actions={
-          resource.isActive ? null : <Badge variant="outline">Nonaktif</Badge>
+          <>
+            {resource.isActive ? null : <Badge variant="outline">Nonaktif</Badge>}
+            <ResourceDetailActions
+              resourceId={resource.id}
+              resourceName={resource.name}
+              unitCode={resource.unitCode}
+              isActive={resource.isActive}
+              defaultValues={{
+                code: resource.code,
+                name: resource.name,
+                spec: resource.spec ?? '',
+                type: resource.type,
+                unitId: resource.unitId,
+                categoryId: resource.categoryId ?? '',
+                leadTimeDays: resource.leadTimeDays,
+                notes: resource.notes ?? '',
+              }}
+              units={units.map((u) => ({ id: u.id, code: u.code, name: u.name }))}
+              categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+              usage={usage}
+              canManage={canManage}
+              canManagePrices={canManage && showCosts}
+            />
+          </>
         }
       />
 
