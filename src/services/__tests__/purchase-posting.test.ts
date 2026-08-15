@@ -122,6 +122,38 @@ describe.skipIf(!ready)('POST pembelian', () => {
     `).simple();
   };
 
+  /**
+   * Arms a trigger that makes any cash insert fail, so the rollback can be
+   * observed.
+   *
+   * Scoped to this test's project with a WHEN clause. It used to fire for every
+   * row in the table, and since vitest runs test files in parallel against one
+   * database, it broke an unrelated suite's payment posting — a failure that
+   * looked like a bug in the code under test and was not.
+   */
+  const breakCashInserts = async (message: string): Promise<void> => {
+    await sql.unsafe(`
+      CREATE OR REPLACE FUNCTION pc_test_break_cash() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION '${message}';
+      END;
+      $$;
+      DROP TRIGGER IF EXISTS trg_pc_test_break_cash ON public.cash_transactions;
+      CREATE TRIGGER trg_pc_test_break_cash
+        BEFORE INSERT ON public.cash_transactions
+        FOR EACH ROW WHEN (NEW.project_id = '${projectId}')
+        EXECUTE FUNCTION pc_test_break_cash();
+    `).simple();
+  };
+
+  const repairCashInserts = async (): Promise<void> => {
+    await sql.unsafe(`
+      DROP TRIGGER IF EXISTS trg_pc_test_break_cash ON public.cash_transactions;
+      DROP FUNCTION IF EXISTS pc_test_break_cash();
+    `).simple();
+  };
+
   const draft = async (qty = '100', unitPrice = '15500', unitId = kgUnitId) =>
     purchasesSvc.saveDraftPurchase(
       user,
@@ -225,18 +257,7 @@ describe.skipIf(!ready)('POST pembelian', () => {
     it('tidak meninggalkan baris apa pun ketika langkah terakhir gagal', async () => {
       const purchase = await draft();
 
-      await sql.unsafe(`
-        CREATE OR REPLACE FUNCTION pc_test_break_cash() RETURNS trigger
-        LANGUAGE plpgsql AS $$
-        BEGIN
-          RAISE EXCEPTION 'kegagalan buatan saat mencatat kas';
-        END;
-        $$;
-        DROP TRIGGER IF EXISTS trg_pc_test_break_cash ON public.cash_transactions;
-        CREATE TRIGGER trg_pc_test_break_cash
-          BEFORE INSERT ON public.cash_transactions
-          FOR EACH ROW EXECUTE FUNCTION pc_test_break_cash();
-      `).simple();
+      await breakCashInserts('kegagalan buatan saat mencatat kas');
 
       try {
         let thrown: unknown;
@@ -260,30 +281,21 @@ describe.skipIf(!ready)('POST pembelian', () => {
         const [row] = await sql`SELECT status FROM purchases WHERE id = ${purchase.id}`;
         expect(row?.status).toBe('DRAFT');
       } finally {
-        await sql.unsafe(`
-          DROP TRIGGER IF EXISTS trg_pc_test_break_cash ON public.cash_transactions;
-          DROP FUNCTION IF EXISTS pc_test_break_cash();
-        `).simple();
+        await repairCashInserts();
       }
     });
 
     it('dapat di-POST dengan benar setelah kegagalan diperbaiki', async () => {
       const purchase = await draft();
 
-      await sql.unsafe(`
-        CREATE OR REPLACE FUNCTION pc_test_break_cash() RETURNS trigger
-        LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'gagal'; END; $$;
-        DROP TRIGGER IF EXISTS trg_pc_test_break_cash ON public.cash_transactions;
-        CREATE TRIGGER trg_pc_test_break_cash BEFORE INSERT ON public.cash_transactions
-          FOR EACH ROW EXECUTE FUNCTION pc_test_break_cash();
-      `).simple();
-
-      await expect(purchasesSvc.postPurchase(user, projectId, purchase.id)).rejects.toThrow();
-
-      await sql.unsafe(`
-        DROP TRIGGER IF EXISTS trg_pc_test_break_cash ON public.cash_transactions;
-        DROP FUNCTION IF EXISTS pc_test_break_cash();
-      `).simple();
+      await breakCashInserts('gagal');
+      try {
+        await expect(purchasesSvc.postPurchase(user, projectId, purchase.id)).rejects.toThrow();
+      } finally {
+        // In a finally: an assertion that throws here used to leave the
+        // trigger armed for whatever ran next.
+        await repairCashInserts();
+      }
 
       const result = await purchasesSvc.postPurchase(user, projectId, purchase.id);
       expect(result.movementsCreated).toBe(1);
