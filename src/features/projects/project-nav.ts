@@ -124,4 +124,4 @@ export function visibleNavSections(projectId: string, role: ProjectRole): NavSec
 }
 
 /** Phases delivered so far. Modules beyond this render as "coming soon". */
-export const CURRENT_PHASE = 6;
+export const CURRENT_PHASE = 7;
