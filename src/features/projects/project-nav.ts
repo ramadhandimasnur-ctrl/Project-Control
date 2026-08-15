@@ -5,10 +5,12 @@ import {
   FileBarChart,
   LayoutDashboard,
   Package,
+  Receipt,
   Settings,
   Sigma,
   Users,
   Wallet,
+  Warehouse,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -64,7 +66,15 @@ export function projectNavSections(projectId: string): NavSection[] {
       title: 'Pelaksanaan',
       items: [
         { label: 'Input Progres', href: `${base}/progress`, icon: ClipboardCheck, phase: 6 },
-        { label: 'Material & Gudang', href: `${base}/material`, icon: Package, phase: 4 },
+        { label: 'Kebutuhan Material', href: `${base}/material`, icon: Package, phase: 4 },
+        { label: 'Gudang', href: `${base}/warehouse`, icon: Warehouse, phase: 4 },
+        {
+          label: 'Pembelian',
+          href: `${base}/purchases`,
+          icon: Receipt,
+          phase: 4,
+          requiresCostAccess: true,
+        },
       ],
     },
     {
@@ -107,4 +117,4 @@ export function visibleNavSections(projectId: string, role: ProjectRole): NavSec
 }
 
 /** Phases delivered so far. Modules beyond this render as "coming soon". */
-export const CURRENT_PHASE = 3;
+export const CURRENT_PHASE = 4;
