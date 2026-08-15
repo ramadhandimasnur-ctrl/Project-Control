@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { randomUUID } from 'node:crypto';
+
 import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 
 import { db } from '@/db';
@@ -117,18 +119,22 @@ export async function createProject(
     );
   }
 
+  // The id is generated here rather than by the database. Under row-level
+  // security the creator is not yet a member of the project, so INSERT …
+  // RETURNING — which is checked against the read policy — would be refused.
+  const projectId = randomUUID();
+
   // Bound to the acting user: `audit_logs` and every other project-scoped
   // table enforces row-level security, which needs `app.current_user_id` set.
   return withUser(user.id, async (tx) => {
-    const [created] = await tx
+    await tx
       .insert(projects)
-      .values({ ...values, orgId: user.orgId, createdBy: user.id, updatedBy: user.id })
-      .returning({ id: projects.id });
+      .values({ ...values, id: projectId, orgId: user.orgId, createdBy: user.id, updatedBy: user.id });
 
-    if (!created) throw conflict('Proyek gagal dibuat.');
-
+    // Written before the audit row: the audit policy asks whether the actor can
+    // reach this project, and this is the row that makes that true.
     await tx.insert(projectMembers).values({
-      projectId: created.id,
+      projectId,
       userId: user.id,
       role: 'PROJECT_MANAGER',
       createdBy: user.id,
@@ -137,15 +143,15 @@ export async function createProject(
 
     await writeAuditLog(tx, {
       orgId: user.orgId,
-      projectId: created.id,
+      projectId,
       tableName: 'projects',
-      recordId: created.id,
+      recordId: projectId,
       action: 'INSERT',
       after: values,
       actorId: user.id,
     });
 
-    return { id: created.id };
+    return { id: projectId };
   });
 }
 

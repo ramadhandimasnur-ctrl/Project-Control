@@ -2,6 +2,7 @@ import { config as loadEnv } from 'dotenv';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
+import { connectionOptions, describeTarget } from './connection';
 import * as schema from './schema';
 
 /**
@@ -30,15 +31,11 @@ export function directUrl(): string {
 }
 
 export function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return '(tidak dapat dibaca)';
-  }
+  return describeTarget(url);
 }
 
 export function createScriptClient(): postgres.Sql {
-  return postgres(directUrl(), { max: 1, prepare: false, onnotice: () => {} });
+  return postgres(connectionOptions(directUrl(), { max: 1, prepare: false, onnotice: () => {} }));
 }
 
 type PgError = Error & { code?: string; detail?: string; hint?: string };

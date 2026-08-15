@@ -148,24 +148,19 @@ Keputusan teknis yang diambil di luar dokumen arsitektur dicatat di
 
 ## Catatan verifikasi
 
-Mesin pengembangan tempat Fase 1 dikerjakan tidak memiliki Docker, WSL, maupun
-Postgres, sehingga bagian berikut **belum pernah dijalankan terhadap database
-sungguhan**:
+Fase 1 sudah diverifikasi terhadap Supabase sungguhan: migrasi, trigger
+integritas, row-level security, seed demo, dan alur login semuanya berjalan,
+dengan 76 test hijau.
 
-- migrasi `0000_init.sql`
-- trigger integritas (`src/db/sql/010_triggers.sql`)
-- row-level security (`src/db/sql/020_rls.sql`)
-- seed demo
-- alur login dan pembuatan proyek dari ujung ke ujung
+`src/db/__tests__/integrity.test.ts` melewatkan dirinya sendiri bila database
+tidak terjangkau, sehingga `npm test` tetap lulus di mesin tanpa Postgres —
+dan kembali menguji trigger serta RLS begitu koneksi ada.
 
-Begitu `.env.local` terisi, jalankan:
+Untuk menyiapkan lingkungan dari nol:
 
 ```bash
 npm run db:setup && npm run db:seed && npm test
 ```
-
-`src/db/__tests__/integrity.test.ts` melewatkan dirinya sendiri selama database
-belum tersedia, dan mulai menguji trigger serta RLS begitu koneksi ada.
 
 ---
 

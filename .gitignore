@@ -5,9 +5,10 @@ build/
 dist/
 coverage/
 
-.env
-.env.local
-.env*.local
+# Everything env-shaped is secret except the template. A narrower pattern let
+# a .env.local.bak slip through once — this one cannot.
+.env*
+!.env.example
 
 .DS_Store
 *.pem

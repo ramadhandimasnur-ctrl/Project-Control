@@ -394,10 +394,12 @@ CREATE TABLE "work_item_checklists" (
 	"position" "checklist_result" DEFAULT 'NA' NOT NULL,
 	"dimension" "checklist_result" DEFAULT 'NA' NOT NULL,
 	"verdict" "checklist_result" GENERATED ALWAYS AS (CASE
-            WHEN as_drawing = 'FAIL' OR position = 'FAIL' OR dimension = 'FAIL' THEN 'FAIL'
-            WHEN as_drawing = 'PASS' AND position = 'PASS' AND dimension = 'PASS' THEN 'PASS'
-            ELSE 'NA'
-          END::checklist_result) STORED,
+            WHEN as_drawing = 'FAIL' OR position = 'FAIL' OR dimension = 'FAIL'
+              THEN 'FAIL'::checklist_result
+            WHEN as_drawing = 'PASS' AND position = 'PASS' AND dimension = 'PASS'
+              THEN 'PASS'::checklist_result
+            ELSE 'NA'::checklist_result
+          END) STORED,
 	"checked_at" date,
 	"checked_by" uuid,
 	"note" text,

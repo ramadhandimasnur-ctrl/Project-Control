@@ -210,38 +210,109 @@ describe.skipIf(!ready)('integritas database', () => {
     });
   });
 
+  /**
+   * These mirror `withUser()`: drop to `app_runtime` and set the identity.
+   *
+   * The role change is not incidental. Supabase's `postgres` role carries
+   * BYPASSRLS, so as `postgres` every one of these queries returns every row
+   * no matter what the policies say — which is exactly how this suite caught
+   * the problem in the first place.
+   */
+  const asUser = async (userId: string | null, query: string) =>
+    sql.begin(async (tx) => {
+      await tx`SET LOCAL ROLE app_runtime`;
+      if (userId !== null) {
+        await tx`SELECT set_config('app.current_user_id', ${userId}, true)`;
+      }
+      return tx.unsafe(query);
+    });
+
   describe('row level security', () => {
+    it('binds policies to a role that cannot bypass them', async () => {
+      const rows = await sql`SELECT rolbypassrls FROM pg_roles WHERE rolname = 'app_runtime'`;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.rolbypassrls).toBe(false);
+    });
+
     it('shows a member their own project', async () => {
-      const rows = await sql.begin(async (tx) => {
-        await tx`SELECT set_config('app.current_user_id', ${userA}, true)`;
-        return tx`SELECT id FROM projects WHERE id = ${projectA}`;
-      });
+      const rows = await asUser(userA, `SELECT id FROM projects WHERE id = '${projectA}'`);
       expect(rows).toHaveLength(1);
     });
 
     // The backstop that matters: even a query with no service-layer guard must
     // not cross an organisation boundary.
     it('hides the project from a user in another organisation', async () => {
-      const rows = await sql.begin(async (tx) => {
-        await tx`SELECT set_config('app.current_user_id', ${userB}, true)`;
-        return tx`SELECT id FROM projects WHERE id = ${projectA}`;
-      });
+      const rows = await asUser(userB, `SELECT id FROM projects WHERE id = '${projectA}'`);
       expect(rows).toHaveLength(0);
     });
 
     it('hides project-scoped data from an outsider', async () => {
-      const rows = await sql.begin(async (tx) => {
-        await tx`SELECT set_config('app.current_user_id', ${userB}, true)`;
-        return tx`SELECT id FROM material_transactions WHERE project_id = ${projectA}`;
-      });
+      const rows = await asUser(
+        userB,
+        `SELECT id FROM material_transactions WHERE project_id = '${projectA}'`,
+      );
       expect(rows).toHaveLength(0);
     });
 
     it('fails closed when no user context is set', async () => {
-      const rows = await sql.begin(async (tx) => {
-        return tx`SELECT id FROM material_transactions WHERE project_id = ${projectA}`;
-      });
+      const rows = await asUser(
+        null,
+        `SELECT id FROM material_transactions WHERE project_id = '${projectA}'`,
+      );
       expect(rows).toHaveLength(0);
+    });
+
+    /**
+     * The Phase 1 definition of done, exercised as the application performs it.
+     *
+     * Order matters and is easy to get wrong: the project row is written
+     * before any membership exists, so the write policy has to fall back to
+     * the organisation; the audit row is written last, because its policy asks
+     * whether the actor can reach the project.
+     */
+    it('lets a member create a project, enrol themselves, and write the audit row', async () => {
+      const newProject = randomUUID();
+
+      await sql.begin(async (tx) => {
+        await tx`SET LOCAL ROLE app_runtime`;
+        await tx`SELECT set_config('app.current_user_id', ${userA}, true)`;
+
+        await tx`
+          INSERT INTO projects (id, org_id, code, name, start_date, end_date)
+          VALUES (${newProject}, ${orgA}, ${`NEW-${newProject.slice(0, 8)}`}, 'Proyek Baru', '2026-01-01', '2026-12-31')
+        `;
+        await tx`
+          INSERT INTO project_members (project_id, user_id, role)
+          VALUES (${newProject}, ${userA}, 'PROJECT_MANAGER')
+        `;
+        await tx`
+          INSERT INTO audit_logs (org_id, project_id, table_name, record_id, action, actor_id)
+          VALUES (${orgA}, ${newProject}, 'projects', ${newProject}, 'INSERT', ${userA})
+        `;
+      });
+
+      const visible = await asUser(userA, `SELECT id FROM projects WHERE id = '${newProject}'`);
+      expect(visible).toHaveLength(1);
+
+      // And it stays invisible to the other organisation.
+      const hidden = await asUser(userB, `SELECT id FROM projects WHERE id = '${newProject}'`);
+      expect(hidden).toHaveLength(0);
+
+      await sql.begin(async (tx) => {
+        await tx`SELECT set_config('app.bypass_rls', 'on', true)`;
+        await tx`SELECT set_config('app.allow_hard_delete', 'on', true)`;
+        await tx`DELETE FROM projects WHERE id = ${newProject}`;
+      });
+    });
+
+    it('refuses a write into another organisation project', async () => {
+      await expect(
+        asUser(
+          userB,
+          `INSERT INTO work_groups (project_id, code, name)
+           VALUES ('${projectA}', 'X', 'Selundupan')`,
+        ),
+      ).rejects.toThrow(/row-level security|policy/i);
     });
   });
 });

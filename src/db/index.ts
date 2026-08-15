@@ -3,6 +3,7 @@ import postgres from 'postgres';
 
 import { serverEnv } from '@/lib/env';
 
+import { connectionOptions } from './connection';
 import * as schema from './schema';
 
 /**
@@ -15,17 +16,21 @@ const globalForDb = globalThis as typeof globalThis & {
 };
 
 function createClient(): postgres.Sql {
-  return postgres(serverEnv().DATABASE_URL, {
-    max: 10,
-    idle_timeout: 20,
-    // Supabase's transaction pooler does not support prepared statements.
-    prepare: false,
-    types: {
-      // `numeric` must never round-trip through a JS float. Keep it a string
-      // all the way to decimal.js.
-      bigint: postgres.BigInt,
-    },
-  });
+  // Credentials are parsed by `connectionOptions`, not by the driver's own URL
+  // handling — see src/db/connection.ts for why.
+  return postgres(
+    connectionOptions(serverEnv().DATABASE_URL, {
+      max: 10,
+      idle_timeout: 20,
+      // Supabase's transaction pooler does not support prepared statements.
+      prepare: false,
+      types: {
+        // `numeric` must never round-trip through a JS float. Keep it a string
+        // all the way to decimal.js.
+        bigint: postgres.BigInt,
+      },
+    }),
+  );
 }
 
 export const sqlClient: postgres.Sql = globalForDb.__pcSql ?? createClient();

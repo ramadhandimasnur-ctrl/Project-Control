@@ -57,6 +57,36 @@ Dokumen mencantumkan `suppliers` di bagian 4.6 (Material), tetapi tabelnya
 ber-scope `org_id`, bukan `project_id`. Definisinya diletakkan bersama master
 data lain di `src/db/schema/resources.ts`.
 
+### A6a. Peran `app_runtime` — tanpa ini RLS tidak berlaku sama sekali
+
+Ditemukan saat verifikasi terhadap database sungguhan: peran `postgres` milik
+Supabase memiliki atribut **`BYPASSRLS`**. Peran dengan atribut itu mengabaikan
+seluruh policy, termasuk yang ber-`FORCE ROW LEVEL SECURITY`. Selama aplikasi
+menyambung sebagai `postgres`, RLS terkonfigurasi rapi tetapi tidak pernah
+dievaluasi.
+
+`src/db/sql/005_app_role.sql` membuat peran `app_runtime`: `NOLOGIN`, tanpa
+atribut istimewa, hanya memegang hak data. `withUser()` menjalankan
+`SET LOCAL ROLE app_runtime` di setiap transaksi request, sehingga policy
+mengikat selama transaksi itu dan kembali normal saat commit. Tidak perlu
+connection string kedua maupun password tambahan — aplikasi tetap menyambung
+sebagai `postgres`, hanya berhenti *bertindak* sebagai `postgres` begitu
+menyentuh data proyek.
+
+Konsekuensi yang menyusul, semuanya sudah ditangani dan diuji:
+
+- `projects` dan `project_members` memerlukan `WITH CHECK` terpisah dari
+  `USING`. Saat proyek dibuat, barisnya ditulis sebelum keanggotaan ada,
+  sehingga `WITH CHECK` berbasis keanggotaan akan menolak insert pertama dan
+  proyek tidak akan pernah bisa dibuat. Pembacaan tetap berbasis keanggotaan;
+  hanya penulisan yang dilonggarkan sebatas organisasi milik pengguna.
+- `createProject` membangkitkan UUID-nya sendiri, bukan memakai
+  `INSERT … RETURNING`. `RETURNING` dievaluasi terhadap klausa `USING`, yang
+  belum dapat dipenuhi pembuatnya.
+- Subquery di dalam policy juga tunduk pada policy tabel yang dibacanya.
+  Pencarian organisasi pemilik proyek karena itu memakai fungsi
+  `SECURITY DEFINER` `pc_project_org_id()`.
+
 ### A6. Desain Row Level Security
 
 Identitas masuk ke database lewat GUC transaksional:

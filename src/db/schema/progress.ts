@@ -98,13 +98,23 @@ export const workItemChecklists = pgTable(
     position: checklistResultEnum('position').notNull().default('NA'),
     dimension: checklistResultEnum('dimension').notNull().default('NA'),
 
-    /** Derived in the database so no caller can disagree about the verdict. */
+    /**
+     * Derived in the database so no caller can disagree about the verdict.
+     *
+     * Each branch carries its own cast. Casting the CASE as a whole would make
+     * the branches resolve to `text` and defer the enum conversion to runtime,
+     * which Postgres rejects: a generated column needs an immutable
+     * expression, and the text-to-enum cast is not one. Per-branch casts are
+     * folded into enum constants at parse time.
+     */
     verdict: checklistResultEnum('verdict').generatedAlwaysAs(
       sql`CASE
-            WHEN as_drawing = 'FAIL' OR position = 'FAIL' OR dimension = 'FAIL' THEN 'FAIL'
-            WHEN as_drawing = 'PASS' AND position = 'PASS' AND dimension = 'PASS' THEN 'PASS'
-            ELSE 'NA'
-          END::checklist_result`,
+            WHEN as_drawing = 'FAIL' OR position = 'FAIL' OR dimension = 'FAIL'
+              THEN 'FAIL'::checklist_result
+            WHEN as_drawing = 'PASS' AND position = 'PASS' AND dimension = 'PASS'
+              THEN 'PASS'::checklist_result
+            ELSE 'NA'::checklist_result
+          END`,
     ),
 
     checkedAt: day('checked_at'),

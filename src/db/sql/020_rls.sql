@@ -100,6 +100,20 @@ LANGUAGE sql STABLE AS $$
   SELECT p_org_id IS NOT NULL AND p_org_id = pc_current_org_id();
 $$;
 
+/*
+ * Owning organisation of a project.
+ *
+ * SECURITY DEFINER matters here: a subquery written inline in a policy is
+ * itself subject to the policies of the tables it reads. Looking up
+ * `projects` inline would be filtered by the `projects` read policy, so a
+ * project the user cannot yet see — the one they are creating — would appear
+ * not to exist, and the enrolling INSERT would be refused.
+ */
+CREATE OR REPLACE FUNCTION pc_project_org_id(p_project_id uuid) RETURNS uuid
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT p.org_id FROM public.projects p WHERE p.id = p_project_id;
+$$;
+
 -- --------------------------------------------------------------------------
 -- Apply one policy per table.
 --
@@ -198,6 +212,37 @@ BEGIN
   END LOOP;
 END;
 $$;
+
+-- --------------------------------------------------------------------------
+-- Bootstrap exception for the two tables a new project is born into.
+--
+-- The generic policy uses one expression for both USING and WITH CHECK, which
+-- cannot work here: creating a project inserts the `projects` row *before* the
+-- `project_members` row exists, so a membership-based WITH CHECK would reject
+-- the very first insert and no project could ever be created.
+--
+-- Reads stay membership-based. Writes are confined to the user's own
+-- organisation, which is the boundary RLS exists to defend; deciding *which*
+-- member may write is the service layer's job (assertProjectAccess).
+-- --------------------------------------------------------------------------
+-- Reading stays strictly membership-based, so a colleague who was never added
+-- to a project still cannot see it. Only the write check is relaxed, and only
+-- as far as the user's own organisation.
+--
+-- This is also why `createProject` generates the project id itself instead of
+-- using INSERT … RETURNING: RETURNING is evaluated against the USING clause,
+-- which the creator cannot yet satisfy.
+DROP POLICY IF EXISTS pc_access ON public.projects;
+CREATE POLICY pc_access ON public.projects
+  FOR ALL
+  USING (pc_can_access_project(id) OR pc_is_bypass())
+  WITH CHECK (pc_can_access_org(org_id) OR pc_is_bypass());
+
+DROP POLICY IF EXISTS pc_access ON public.project_members;
+CREATE POLICY pc_access ON public.project_members
+  FOR ALL
+  USING (pc_can_access_project(project_id) OR pc_is_bypass())
+  WITH CHECK (pc_can_access_org(pc_project_org_id(project_id)) OR pc_is_bypass());
 
 -- --------------------------------------------------------------------------
 -- Fail the deployment if any base table ended up without a policy.

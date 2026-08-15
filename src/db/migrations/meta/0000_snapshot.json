@@ -1,5 +1,5 @@
 {
-  "id": "bc7ea053-3a86-4230-bc08-44f7d861d566",
+  "id": "1f012b0e-e36b-4f57-b43c-d66ec5593afb",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -4040,7 +4040,7 @@
           "primaryKey": false,
           "notNull": false,
           "generated": {
-            "as": "CASE\n            WHEN as_drawing = 'FAIL' OR position = 'FAIL' OR dimension = 'FAIL' THEN 'FAIL'\n            WHEN as_drawing = 'PASS' AND position = 'PASS' AND dimension = 'PASS' THEN 'PASS'\n            ELSE 'NA'\n          END::checklist_result",
+            "as": "CASE\n            WHEN as_drawing = 'FAIL' OR position = 'FAIL' OR dimension = 'FAIL'\n              THEN 'FAIL'::checklist_result\n            WHEN as_drawing = 'PASS' AND position = 'PASS' AND dimension = 'PASS'\n              THEN 'PASS'::checklist_result\n            ELSE 'NA'::checklist_result\n          END",
             "type": "stored"
           }
         },
