@@ -2,7 +2,7 @@
 
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -22,6 +22,7 @@ import { toDecimal } from '@/lib/calc/decimal';
 import { formatCurrency } from '@/lib/format';
 
 import { savePurchaseAction } from './actions';
+import { WarehouseCreateButton } from './warehouse-actions';
 
 export type PurchasePickers = {
   suppliers: { id: string; code: string; name: string }[];
@@ -83,6 +84,21 @@ export function PurchaseFormDialog({
   const setLine = (key: number, patch: Partial<DraftLine>) => {
     setLines((current) => current.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   };
+
+  /*
+   * Lines created before the project had a warehouse hold an empty warehouseId.
+   * A <select> with no matching option still renders its first entry, so the
+   * row would look complete while submit rejected it. Backfilling here keeps
+   * what is on screen and what is in state the same thing.
+   */
+  useEffect(() => {
+    if (defaultWarehouse === '') return;
+    setLines((current) =>
+      current.some((l) => l.warehouseId === '')
+        ? current.map((l) => (l.warehouseId === '' ? { ...l, warehouseId: defaultWarehouse } : l))
+        : current,
+    );
+  }, [defaultWarehouse]);
 
   /** Choosing a resource pre-fills its catalogue unit; it stays changeable. */
   const chooseResource = (key: number, resourceId: string) => {
@@ -171,8 +187,20 @@ export function PurchaseFormDialog({
         {pickers.warehouses.length === 0 ? (
           <Alert variant="destructive">
             <AlertTitle>Proyek ini belum memiliki gudang</AlertTitle>
-            <AlertDescription>
-              Buat gudang terlebih dahulu agar barang yang dibeli punya tempat masuk.
+            <AlertDescription className="space-y-3">
+              <p>Buat gudang terlebih dahulu agar barang yang dibeli punya tempat masuk.</p>
+              {/*
+                Reaching this dialog already required ENGINEER access, the same
+                authority saveWarehouse demands, and the action re-checks it
+                server-side regardless.
+              */}
+              <WarehouseCreateButton
+                projectId={projectId}
+                canManage
+                isFirst
+                size="sm"
+                label="Buat gudang sekarang"
+              />
             </AlertDescription>
           </Alert>
         ) : (

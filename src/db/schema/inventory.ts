@@ -25,6 +25,8 @@ export const warehouses = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
+    /** Where it physically stands, e.g. "Halaman belakang, dekat pos jaga". */
+    location: text('location'),
     isDefault: boolean('is_default').notNull().default(false),
     ...auditColumns(),
   },

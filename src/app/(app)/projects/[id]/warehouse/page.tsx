@@ -15,6 +15,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { MovementActions } from '@/features/purchases/movement-actions';
+import {
+  WarehouseCreateButton,
+  WarehouseRowActions,
+} from '@/features/purchases/warehouse-actions';
 import { canEditProjectData, canRecordFieldData } from '@/lib/auth/roles';
 import { EMPTY_VALUE, formatCurrency, formatDay, formatQuantity } from '@/lib/format';
 import { withUser } from '@/db/context';
@@ -88,21 +92,33 @@ export default async function WarehousePage({ params }: { params: Promise<{ id: 
         description="Saldo dan harga rata-rata dihitung ulang dari mutasi, bukan disimpan sebagai angka berjalan."
         actions={
           canRecord ? (
-            <MovementActions
-              projectId={projectId}
-              warehouses={warehouses.map((w) => ({ id: w.id, name: w.name, isDefault: w.isDefault }))}
-              resources={inStock.map((r) => ({
-                id: r.id,
-                code: r.code,
-                name: r.name,
-                unitId: r.unitId,
-                unitCode: r.unitCode,
-                qtyOnHand: r.qtyOnHand,
-              }))}
-              workItems={workItemOptions}
-              units={units.map((u) => ({ id: u.id, code: u.code }))}
-              canManage={canManage}
-            />
+            <div className="flex items-center gap-2">
+              <WarehouseCreateButton
+                projectId={projectId}
+                canManage={canManage}
+                isFirst={warehouses.length === 0}
+                variant="outline"
+              />
+              <MovementActions
+                projectId={projectId}
+                warehouses={warehouses.map((w) => ({
+                  id: w.id,
+                  name: w.name,
+                  isDefault: w.isDefault,
+                }))}
+                resources={inStock.map((r) => ({
+                  id: r.id,
+                  code: r.code,
+                  name: r.name,
+                  unitId: r.unitId,
+                  unitCode: r.unitCode,
+                  qtyOnHand: r.qtyOnHand,
+                }))}
+                workItems={workItemOptions}
+                units={units.map((u) => ({ id: u.id, code: u.code }))}
+                canManage={canManage}
+              />
+            </div>
           ) : null
         }
       />
@@ -112,9 +128,57 @@ export default async function WarehousePage({ params }: { params: Promise<{ id: 
           icon={Warehouse}
           title="Belum ada gudang"
           description="Buat gudang terlebih dahulu agar barang yang dibeli punya tempat masuk dan pergerakannya dapat ditelusuri."
+          action={
+            <WarehouseCreateButton projectId={projectId} canManage={canManage} isFirst />
+          }
         />
       ) : (
         <>
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold">Daftar gudang</h2>
+            <div className="overflow-x-auto rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nama</TableHead>
+                    <TableHead>Lokasi</TableHead>
+                    <TableHead className="w-28 text-right">Mutasi</TableHead>
+                    {canManage ? <TableHead className="w-40" /> : null}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {warehouses.map((w) => (
+                    <TableRow key={w.id}>
+                      <TableCell className="font-medium">
+                        {w.name}
+                        {w.isDefault ? (
+                          <Badge variant="secondary" className="ml-2 text-[10px]">
+                            utama
+                          </Badge>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {w.location ?? EMPTY_VALUE}
+                      </TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">
+                        {w.movementCount}
+                      </TableCell>
+                      {canManage ? (
+                        <TableCell>
+                          <WarehouseRowActions
+                            projectId={projectId}
+                            warehouse={w}
+                            canManage={canManage}
+                          />
+                        </TableCell>
+                      ) : null}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </section>
+
           <section className="space-y-2">
             <h2 className="text-sm font-semibold">Saldo stok</h2>
             {balance.length === 0 ? (

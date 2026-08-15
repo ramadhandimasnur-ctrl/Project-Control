@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { filterIndexed, haystackOf, indexOptions, matches, termsOf } from '../combobox-filter';
+import {
+  filterIndexed,
+  haystackOf,
+  indexOptions,
+  matches,
+  termsOf,
+  visibleWithSelection,
+} from '../combobox-filter';
 
 /** A slice of the real catalogue, including its awkward cases. */
 const CATALOGUE = [
@@ -119,5 +126,50 @@ describe('filterIndexed', () => {
     // Fifty keystrokes' worth of filtering, comfortably inside a frame budget.
     expect(elapsed).toBeLessThan(100);
     expect(filterIndexed(bigIndex, 'material 12').map((o) => o.code)).toContain('M.12');
+  });
+});
+
+describe('visibleWithSelection', () => {
+  const long = Array.from({ length: 300 }, (_, i) => ({
+    value: `id-${i}`,
+    code: `M.${i}`,
+    label: `material ${i}`,
+  }));
+
+  it('caps the list at max', () => {
+    expect(visibleWithSelection(long, 100, '')).toHaveLength(100);
+  });
+
+  it('leaves the list alone when it already fits', () => {
+    expect(visibleWithSelection(long.slice(0, 5), 100, '')).toHaveLength(5);
+  });
+
+  it('leaves the list alone when the selection is already inside the cap', () => {
+    const shown = visibleWithSelection(long, 100, 'id-7');
+    expect(shown).toHaveLength(100);
+    expect(shown[0]?.value).toBe('id-0');
+  });
+
+  // Without this the panel opens with no tick anywhere, reading as if nothing
+  // had ever been chosen.
+  it('pulls a selection from beyond the cap into view', () => {
+    const shown = visibleWithSelection(long, 100, 'id-250');
+    expect(shown).toHaveLength(100);
+    expect(shown[0]?.value).toBe('id-250');
+    expect(shown.filter((o) => o.value === 'id-250')).toHaveLength(1);
+  });
+
+  // The query is the user's own instruction; answering it honestly wins.
+  it('does not resurrect a selection the query filtered out', () => {
+    const shown = visibleWithSelection(long.slice(0, 3), 100, 'id-250');
+    expect(shown.map((o) => o.value)).toEqual(['id-0', 'id-1', 'id-2']);
+  });
+
+  it('survives a cap of one', () => {
+    expect(visibleWithSelection(long, 1, 'id-250').map((o) => o.value)).toEqual(['id-250']);
+  });
+
+  it('handles an empty list', () => {
+    expect(visibleWithSelection([], 100, 'id-1')).toEqual([]);
   });
 });

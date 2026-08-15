@@ -56,3 +56,24 @@ export function filterIndexed<T extends FilterableOption>(
   if (terms.length === 0) return indexed.map((entry) => entry.option);
   return indexed.filter((entry) => matches(entry.haystack, terms)).map((entry) => entry.option);
 }
+
+/**
+ * The rows actually rendered: the first `max` matches, but never without the
+ * current selection.
+ *
+ * A catalogue of 379 easily pushes the chosen row past the cap, and a panel
+ * that opens with no tick anywhere reads as though nothing was ever chosen.
+ * When the selection does not match the query it stays hidden — the query is
+ * the user's own instruction, and answering it honestly matters more.
+ */
+export function visibleWithSelection<T extends FilterableOption>(
+  filtered: readonly T[],
+  max: number,
+  value: string,
+): T[] {
+  const head = filtered.slice(0, max);
+  if (value === '' || head.some((option) => option.value === value)) return head;
+
+  const chosen = filtered.find((option) => option.value === value);
+  return chosen ? [chosen, ...head.slice(0, Math.max(max - 1, 0))] : head;
+}

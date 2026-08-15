@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { toUserMessage } from '@/lib/errors';
+import { warehouseFormSchema } from '@/lib/validation/inventory';
 import { recordMovement, voidMovement, type MovementInput } from '@/services/material-transactions';
 import {
   postPurchase,
@@ -140,14 +141,28 @@ export async function voidMovementAction(
 
 // --- warehouses -------------------------------------------------------------
 
+export type SaveWarehouseResult =
+  | { ok: true }
+  | { ok: false; message: string; hint?: string; fieldErrors?: Record<string, string> };
+
 export async function saveWarehouseAction(
   projectId: string,
   warehouseId: string | null,
-  input: { name: string; isDefault: boolean },
-): Promise<ActionResult> {
+  raw: unknown,
+): Promise<SaveWarehouseResult> {
+  const parsed = warehouseFormSchema.safeParse(raw);
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const key = String(issue.path[0] ?? '');
+      if (key && !fieldErrors[key]) fieldErrors[key] = issue.message;
+    }
+    return { ok: false, message: 'Periksa kembali isian formulir.', fieldErrors };
+  }
+
   try {
     const user = await requireSessionUser();
-    await saveWarehouse(user, projectId, warehouseId, input);
+    await saveWarehouse(user, projectId, warehouseId, parsed.data);
   } catch (error) {
     return failure(error);
   }

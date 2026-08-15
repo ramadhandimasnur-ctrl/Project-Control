@@ -15,6 +15,13 @@
       "when": 1786791685662,
       "tag": "0001_adjustment_may_be_negative",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786796920166,
+      "tag": "0002_warehouse_location",
+      "breakpoints": true
     }
   ]
 }

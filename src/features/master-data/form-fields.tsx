@@ -158,6 +158,7 @@ export function ComboboxField({
         value={value}
         onValueChange={onChange}
         invalid={Boolean(error)}
+        {...(error ? { describedBy: `${id}-error` } : {})}
         disabled={disabled}
         {...(placeholder ? { placeholder } : {})}
         {...(searchPlaceholder ? { searchPlaceholder } : {})}

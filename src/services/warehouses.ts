@@ -14,8 +14,15 @@ import { type SessionUser } from './session';
 export type WarehouseRow = {
   id: string;
   name: string;
+  location: string | null;
   isDefault: boolean;
   movementCount: number;
+};
+
+export type WarehouseInput = {
+  name: string;
+  location: string | null;
+  isDefault: boolean;
 };
 
 export async function listWarehouses(
@@ -40,6 +47,7 @@ export async function listWarehouses(
     .select({
       id: warehouses.id,
       name: warehouses.name,
+      location: warehouses.location,
       isDefault: warehouses.isDefault,
       movementCount: usage.movementTotal,
     })
@@ -55,7 +63,7 @@ export async function saveWarehouse(
   user: SessionUser,
   projectId: string,
   warehouseId: string | null,
-  input: { name: string; isDefault: boolean },
+  input: WarehouseInput,
 ): Promise<{ id: string }> {
   const access = await assertProjectAccess(user.id, projectId, 'ENGINEER');
 
@@ -69,10 +77,21 @@ export async function saveWarehouse(
     throw conflict(`Gudang bernama "${input.name}" sudah ada di proyek ini.`);
   }
 
+  // The first warehouse becomes the default whether or not it was ticked:
+  // a project holding warehouses but naming none of them default would leave
+  // new purchase lines with nothing to pre-select.
+  const [existing] = await db
+    .select({ value: count() })
+    .from(warehouses)
+    .where(eq(warehouses.projectId, projectId));
+
+  const values =
+    warehouseId === null && (existing?.value ?? 0) === 0 ? { ...input, isDefault: true } : input;
+
   return withUser(user.id, async (tx) => {
     // Only one default per project; the partial unique index enforces it, so
     // the previous holder is cleared first rather than colliding.
-    if (input.isDefault) {
+    if (values.isDefault) {
       await tx
         .update(warehouses)
         .set({ isDefault: false, updatedBy: user.id })
@@ -89,14 +108,14 @@ export async function saveWarehouse(
     if (id === null) {
       const [created] = await tx
         .insert(warehouses)
-        .values({ projectId, ...input, createdBy: user.id, updatedBy: user.id })
+        .values({ projectId, ...values, createdBy: user.id, updatedBy: user.id })
         .returning({ id: warehouses.id });
       if (!created) throw conflict('Gudang gagal dibuat.');
       id = created.id;
     } else {
       await tx
         .update(warehouses)
-        .set({ ...input, updatedBy: user.id })
+        .set({ ...values, updatedBy: user.id })
         .where(and(eq(warehouses.id, id), eq(warehouses.projectId, projectId)));
     }
 
@@ -106,7 +125,7 @@ export async function saveWarehouse(
       tableName: 'warehouses',
       recordId: id,
       action: warehouseId === null ? 'INSERT' : 'UPDATE',
-      after: input,
+      after: values,
       actorId: user.id,
     });
 
