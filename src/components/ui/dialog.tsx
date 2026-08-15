@@ -39,6 +39,28 @@ function DialogOverlay({
   )
 }
 
+/*
+ * The dialog body scrolls; the header and footer stay put.
+ *
+ * Targeted by exclusion rather than by asking every dialog to wrap its fields
+ * in a `<DialogBody>`: a caller who forgot the wrapper would get an unreachable
+ * submit button, which is the bug this exists to fix.
+ *
+ * Three classes, each load-bearing. `min-h-0` is the one people miss — a flex
+ * child will not shrink below its content without it, so the dialog grows past
+ * the viewport again no matter what max-height says. `-mx-4 px-4` widens the
+ * scroll area to the dialog's own edges while keeping its content inset, which
+ * is what lets a footer *inside* a form still run edge to edge without
+ * overflowing its scroll container.
+ */
+/*
+ * Written out in full on purpose. Tailwind scans source text for whole class
+ * names, so a selector assembled from a shared prefix at runtime would compile
+ * to nothing at all and the dialog would silently go back to overflowing.
+ */
+const scrollableBody =
+  "[&>*:not([data-slot=dialog-header]):not([data-slot=dialog-footer]):not([data-slot=dialog-close])]:min-h-0 [&>*:not([data-slot=dialog-header]):not([data-slot=dialog-footer]):not([data-slot=dialog-close])]:flex-1 [&>*:not([data-slot=dialog-header]):not([data-slot=dialog-footer]):not([data-slot=dialog-close])]:overflow-y-auto [&>*:not([data-slot=dialog-header]):not([data-slot=dialog-footer]):not([data-slot=dialog-close])]:-mx-4 [&>*:not([data-slot=dialog-header]):not([data-slot=dialog-footer]):not([data-slot=dialog-close])]:px-4"
+
 function DialogContent({
   className,
   children,
@@ -53,7 +75,13 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          /*
+           * No bottom padding: the footer owns the dialog's bottom edge, and it
+           * has to reach that edge whether it sits here as a direct child or
+           * inside a scrolling form.
+           */
+          "fixed top-1/2 left-1/2 z-50 flex max-h-[85vh] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-hidden rounded-xl bg-popover p-4 pb-0 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          scrollableBody,
           className
         )}
         {...props}
@@ -84,7 +112,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2", className)}
+      className={cn("flex shrink-0 flex-col gap-2 pr-8", className)}
       {...props}
     />
   )
@@ -102,7 +130,15 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        /*
+         * Sticky so it survives being placed inside a scrolling form, which is
+         * where most of these dialogs put it.
+         *
+         * Solid rather than the old bg-muted/50: content now slides underneath,
+         * and a translucent bar would show it passing through. The mix is the
+         * colour that tint used to resolve to over the popup.
+         */
+        "sticky bottom-0 z-10 -mx-4 flex shrink-0 flex-col-reverse gap-2 rounded-b-xl border-t bg-[color-mix(in_oklch,var(--popover),var(--muted)_50%)] px-4 py-3 sm:flex-row sm:justify-end",
         className
       )}
       {...props}
