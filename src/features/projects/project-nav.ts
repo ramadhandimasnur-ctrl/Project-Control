@@ -41,7 +41,15 @@ export function projectNavSections(projectId: string): NavSection[] {
   return [
     {
       title: 'Ringkasan',
-      items: [{ label: 'Dashboard', href: base, icon: LayoutDashboard, phase: 8 }],
+      /*
+       * Phase 1, not 8: this is the project's home page and has been reachable
+       * since the beginning — clicking a project in the list lands here. It
+       * grew into the executive dashboard in phase 7, but gating the entry
+       * behind a later phase only ever hid a page that already worked.
+       */
+      items: [
+        { label: 'Dashboard Eksekutif', href: base, icon: LayoutDashboard, phase: 1 },
+      ],
     },
     {
       title: 'Estimasi',

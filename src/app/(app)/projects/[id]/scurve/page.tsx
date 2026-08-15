@@ -1,4 +1,4 @@
-import { Info, LineChart } from 'lucide-react';
+import { FileSpreadsheet, Info, LineChart } from 'lucide-react';
 import type { Metadata } from 'next';
 
 import { EmptyState } from '@/components/empty-state';
@@ -56,9 +56,15 @@ export default async function SCurvePage({ params }: { params: Promise<{ id: str
         title="Kurva-S Rencana"
         description="Kumulatif rencana progres: bobot tiap pekerjaan dikalikan porsi periodenya, lalu dijumlahkan berjalan."
         actions={
-          <ButtonLink variant="outline" href={`/projects/${projectId}/schedule`}>
-            Atur jadwal
-          </ButtonLink>
+          <div className="flex flex-wrap items-center gap-2">
+            <ButtonLink variant="outline" href={`/projects/${projectId}/exports/progress`}>
+              <FileSpreadsheet className="size-4" aria-hidden />
+              Ekspor Excel
+            </ButtonLink>
+            <ButtonLink variant="outline" href={`/projects/${projectId}/schedule`}>
+              Atur jadwal
+            </ButtonLink>
+          </div>
         }
       />
 

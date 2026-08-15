@@ -1,4 +1,4 @@
-import { Info, Scale } from 'lucide-react';
+import { FileSpreadsheet, Info, Scale } from 'lucide-react';
 import type { Metadata } from 'next';
 
 import { EmptyState } from '@/components/empty-state';
@@ -65,9 +65,15 @@ export default async function CapitalPage({ params }: { params: Promise<{ id: st
         title="Kebutuhan Modal & Evaluasi Biaya"
         description="RAB adalah yang dijual, RAP yang direncanakan, realisasi yang benar-benar keluar. Selisihnya diukur terhadap pekerjaan yang sudah jadi."
         actions={
-          <ButtonLink variant="outline" href={`/projects/${projectId}/cash`}>
-            Kas &amp; Termin
-          </ButtonLink>
+          <div className="flex flex-wrap items-center gap-2">
+            <ButtonLink variant="outline" href={`/projects/${projectId}/exports/finance`}>
+              <FileSpreadsheet className="size-4" aria-hidden />
+              Ekspor Excel
+            </ButtonLink>
+            <ButtonLink variant="outline" href={`/projects/${projectId}/cash`}>
+              Kas &amp; Termin
+            </ButtonLink>
+          </div>
         }
       />
 

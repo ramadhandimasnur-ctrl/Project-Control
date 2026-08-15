@@ -1,4 +1,4 @@
-import { TriangleAlert, Wallet } from 'lucide-react';
+import { FileSpreadsheet, TriangleAlert, Wallet } from 'lucide-react';
 import type { Metadata } from 'next';
 
 import { EmptyState } from '@/components/empty-state';
@@ -58,6 +58,11 @@ export default async function CashPage({ params }: { params: Promise<{ id: strin
         description="Kas dihitung dari transaksi yang tercatat, bukan diperkirakan dari progres. Termin owner dan pengeluaran bertemu di sini."
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            {/* Next to the data it exports, not only on the dashboard. */}
+            <ButtonLink variant="outline" href={`/projects/${projectId}/exports/cashflow`}>
+              <FileSpreadsheet className="size-4" aria-hidden />
+              Ekspor Excel
+            </ButtonLink>
             <CashAccountButton projectId={projectId} canManage={canManage} variant="outline" />
             <PaymentTermButton projectId={projectId} nextSeq={nextSeq} canManage={canManage} />
             <CashTransactionButton
