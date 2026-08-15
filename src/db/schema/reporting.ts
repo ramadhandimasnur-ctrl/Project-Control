@@ -1,0 +1,85 @@
+import {
+  index,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
+
+import { primaryId } from './_shared';
+import { auditActionEnum, issueSeverityEnum, issueStatusEnum, reportTypeEnum } from './enums';
+import { auditColumns, organizations, users } from './org';
+import { projects } from './projects';
+import { schedulePeriods } from './schedule';
+
+/**
+ * Published reports are frozen. `payload` holds the fully computed figures, so
+ * reopening an old report shows what was published, not a recomputation
+ * against today's data. One of only two intentional stores of derived values.
+ */
+export const reportSnapshots = pgTable(
+  'report_snapshots',
+  {
+    id: primaryId(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    periodId: uuid('period_id')
+      .notNull()
+      .references(() => schedulePeriods.id, { onDelete: 'restrict' }),
+    reportType: reportTypeEnum('report_type').notNull(),
+    payload: jsonb('payload').notNull(),
+    generatedAt: timestamp('generated_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+    generatedBy: uuid('generated_by').references(() => users.id, { onDelete: 'set null' }),
+    pdfPath: text('pdf_path'),
+  },
+  (t) => [
+    uniqueIndex('report_snapshots_unique').on(t.projectId, t.periodId, t.reportType, t.generatedAt),
+    index('report_snapshots_project_idx').on(t.projectId, t.reportType),
+  ],
+);
+
+export const issues = pgTable(
+  'issues',
+  {
+    id: primaryId(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    periodId: uuid('period_id').references(() => schedulePeriods.id, { onDelete: 'restrict' }),
+    title: text('title').notNull(),
+    description: text('description'),
+    severity: issueSeverityEnum('severity').notNull().default('MEDIUM'),
+    status: issueStatusEnum('status').notNull().default('OPEN'),
+    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
+    ...auditColumns(),
+  },
+  (t) => [index('issues_project_status_idx').on(t.projectId, t.status)],
+);
+
+/** Charter rule 9: every mutation writes here. */
+export const auditLogs = pgTable(
+  'audit_logs',
+  {
+    id: primaryId(),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'set null' }),
+    projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    tableName: text('table_name').notNull(),
+    recordId: uuid('record_id'),
+    action: auditActionEnum('action').notNull(),
+    before: jsonb('before'),
+    after: jsonb('after'),
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    occurredAt: timestamp('occurred_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('audit_logs_project_idx').on(t.projectId, t.occurredAt),
+    index('audit_logs_record_idx').on(t.tableName, t.recordId),
+  ],
+);
