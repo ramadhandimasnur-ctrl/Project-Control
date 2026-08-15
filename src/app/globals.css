@@ -127,3 +127,47 @@
     @apply font-sans;
     }
 }
+/*
+ * Print.
+ *
+ * A report is printed from the same page it is read on, so everything that is
+ * navigation rather than content is removed and the page is given real margins.
+ * `print-color-adjust` is what keeps the status colours and table rules from
+ * being helpfully optimised away by the browser.
+ */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+
+  [data-print='hide'] {
+    display: none !important;
+  }
+
+  body {
+    background: white;
+  }
+
+  /* A photograph or a table row split across two sheets is unreadable. */
+  [data-print='keep-together'] {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  [data-print='page-break'] {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .print-full {
+    max-width: none !important;
+    width: 100% !important;
+    padding: 0 !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 
 import { Badge } from '@/components/ui/badge';
+import { PhotoStashProvider } from '@/features/progress/photo-stash';
 import { ProjectSidebar } from '@/features/projects/project-sidebar';
 import { PROJECT_ROLE_LABELS } from '@/lib/auth/roles';
 import { isAppError } from '@/lib/errors';
@@ -28,7 +29,7 @@ export default async function ProjectLayout({
 
   return (
     <div className="flex min-h-[calc(100vh-3.5rem)]">
-      <aside className="hidden w-60 shrink-0 border-r bg-muted/20 lg:block">
+      <aside data-print="hide" className="hidden w-60 shrink-0 border-r bg-muted/20 lg:block">
         <div className="border-b p-4">
           <p className="font-mono text-xs text-muted-foreground">{project.code}</p>
           <p className="mt-0.5 line-clamp-2 text-sm font-semibold">{project.name}</p>
@@ -38,7 +39,14 @@ export default async function ProjectLayout({
         </div>
         <ProjectSidebar projectId={project.id} role={project.role} />
       </aside>
-      <main className="min-w-0 flex-1">{children}</main>
+      {/*
+        The stash holds site photographs in memory for the whole project area,
+        so one attached during an inspection is still there when the report is
+        opened. It must sit above the pages, not inside a dialog that unmounts.
+      */}
+      <main className="min-w-0 flex-1">
+        <PhotoStashProvider>{children}</PhotoStashProvider>
+      </main>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { and, asc, count, eq, inArray, notInArray } from 'drizzle-orm';
+import { cache } from 'react';
 
 import { db } from '@/db';
 import { withUser } from '@/db/context';
@@ -610,7 +611,15 @@ export type ScheduleOverview = {
   showCosts: boolean;
 };
 
-export async function getScheduleOverview(
+/**
+ * Memoised for the lifetime of one request.
+ *
+ * Assembling this runs the whole project estimate, and a page that shows both
+ * the schedule and the progress comparison reaches for it down two independent
+ * paths. Without the cache a report page prices every work item twice to draw
+ * one sheet of paper.
+ */
+export const getScheduleOverview = cache(async function getScheduleOverview(
   userId: string,
   projectId: string,
 ): Promise<ScheduleOverview> {
@@ -726,7 +735,7 @@ export async function getScheduleOverview(
     incomplete: checks.filter((check) => !check.isComplete),
     showCosts: estimate.showCosts,
   };
-}
+});
 
 function sCurveOf(
   periods: readonly PeriodRow[],

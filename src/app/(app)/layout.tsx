@@ -13,7 +13,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <Providers>
       <div className="flex min-h-screen flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-4">
+        <header data-print="hide" className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-4">
           <Link href="/projects" className="flex items-center gap-2 font-semibold">
             <span className="flex size-7 items-center justify-center rounded bg-primary text-primary-foreground">
               <HardHat className="size-4" aria-hidden />

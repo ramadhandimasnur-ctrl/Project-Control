@@ -21,6 +21,8 @@ import { selectClassName } from '@/features/master-data/form-fields';
 import { CHECKLIST_ITEM_LABELS, CHECKLIST_LABELS } from '@/lib/validation/progress';
 
 import { saveChecklistAction } from './actions';
+import { PhotoField } from './photo-field';
+import { inspectionKey } from './photo-stash';
 
 type Result = 'PASS' | 'FAIL' | 'NA';
 
@@ -113,6 +115,8 @@ export function ChecklistDialog({
               onChange={(e) => setForm({ ...form, checkedAt: e.target.value })}
             />
           </div>
+
+          <PhotoField stashKey={inspectionKey(workItemId, periodId)} />
 
           <div
             className={

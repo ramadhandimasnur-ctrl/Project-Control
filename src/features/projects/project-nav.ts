@@ -3,6 +3,7 @@ import {
   CalendarRange,
   ClipboardCheck,
   FileBarChart,
+  FileText,
   LayoutDashboard,
   Package,
   Receipt,
@@ -66,6 +67,12 @@ export function projectNavSections(projectId: string): NavSection[] {
       title: 'Pelaksanaan',
       items: [
         { label: 'Input Progres', href: `${base}/progress`, icon: ClipboardCheck, phase: 6 },
+        {
+          label: 'Laporan Opname',
+          href: `${base}/reports/opname`,
+          icon: FileText,
+          phase: 6,
+        },
         { label: 'Kebutuhan Material', href: `${base}/material`, icon: Package, phase: 4 },
         { label: 'Gudang', href: `${base}/warehouse`, icon: Warehouse, phase: 4 },
         {
