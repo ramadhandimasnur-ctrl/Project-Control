@@ -25,5 +25,11 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 240_000,
+    /*
+     * Its own build directory. Without this the e2e build overwrites the
+     * manifest a running `next dev` is serving, and the browser starts 404-ing
+     * on chunks that no longer exist — the same collision `build:check` avoids.
+     */
+    env: { NEXT_DIST_DIR: '.next-e2e' },
   },
 });

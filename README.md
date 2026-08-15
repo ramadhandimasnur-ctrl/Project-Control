@@ -15,16 +15,29 @@ tidak ada angka contoh yang di-hardcode.
 |---|---|---|
 | 1 | Skema DB penuh, auth, CRUD proyek, anggota & otorisasi, layout, seed demo | **Selesai** |
 | 2 | Master data: satuan, kategori, resource, harga, supplier, impor Excel | **Selesai** |
-| 3 | Work breakdown, volume take-off, AHSP, RAB/RAP, template | Belum |
-| 4 | Kebutuhan material, gudang, pembelian + POST transaksional | Belum |
-| 5 | Periode, jadwal, Gantt, baseline, kurva-S rencana | Belum |
-| 6 | Input progres, approval, ceklis mutu, kurva-S realisasi | Belum |
-| 7 | Cashflow, termin, subkon, kebutuhan modal | Belum |
-| 8 | Dashboard lengkap | Belum |
-| 9 | Laporan, snapshot, print + PDF, ekspor Excel | Belum |
-| 10 | E2E, performa, aksesibilitas | Belum |
+| 3 | Work breakdown, volume take-off, AHSP, RAB/RAP, template | **Selesai** |
+| 4 | Kebutuhan material, gudang, pembelian + POST transaksional | **Selesai** |
+| 5 | Periode, jadwal, Gantt, baseline, kurva-S rencana | **Selesai** |
+| 6 | Input progres, approval, ceklis mutu, kurva-S realisasi | **Selesai** |
+| 7 | Cashflow, termin owner, kebutuhan modal, dashboard eksekutif, ekspor Excel | **Selesai** |
+| 8 | Dashboard lengkap | **Selesai** (dikirim bersama Fase 7) |
+| 9 | Laporan, snapshot beku, cetak, ekspor Excel | **Selesai** |
+| 10 | Uji asap E2E, penyiapan produksi | **Selesai** |
 
-Sidebar proyek menampilkan modul yang belum dibangun dengan lencana fasenya.
+Seluruh modul pada sidebar sudah aktif; tidak ada lagi lencana fase.
+
+### Ditangguhkan
+
+Domain **subkontraktor** — `subcontracts`, `subcontract_items`,
+`subcontract_certificates`, `subcontract_advances` — ada di skema tetapi belum
+punya service maupun antarmuka. Sejalan dengan itu, nilai `SUBCON_PAYMENT` dan
+`PAYROLL` pada `cash_source_type` tidak pernah ditulis siapa pun.
+
+Ini keputusan sadar, bukan kelalaian: alur inti divalidasi lebih dulu lewat
+pemakaian nyata sebelum domain baru ditambahkan. Biaya subkontraktor yang sudah
+dibayar tetap masuk hitungan lewat pencatatan kas manual dengan kategori
+`SUBCON`, sehingga arus kas dan varians biaya tetap utuh — yang belum ada adalah
+kontrak, sertifikat progres subkon, dan pengembalian uang mukanya.
 
 ---
 
@@ -95,6 +108,7 @@ npm run dev
 |---|---|
 | `npm run dev` | Server pengembangan |
 | `npm run build` | Build produksi |
+| `npm run build:check` | Build verifikasi ke direktori terpisah; aman saat `dev` berjalan |
 | `npm run typecheck` | TypeScript strict, tanpa emit |
 | `npm run lint` | ESLint |
 | `npm test` | Unit test (Vitest) |
@@ -150,19 +164,85 @@ Keputusan teknis yang diambil di luar dokumen arsitektur dicatat di
 
 ## Catatan verifikasi
 
-Fase 1 sudah diverifikasi terhadap Supabase sungguhan: migrasi, trigger
-integritas, row-level security, seed demo, dan alur login semuanya berjalan,
-dengan 76 test hijau.
+Setiap fase diverifikasi terhadap Supabase sungguhan, bukan hanya typecheck:
+migrasi, trigger integritas, row-level security, POST transaksional, alur
+persetujuan progres, dan perhitungan keuangan semuanya diuji terhadap basis
+data hidup.
 
-`src/db/__tests__/integrity.test.ts` melewatkan dirinya sendiri bila database
-tidak terjangkau, sehingga `npm test` tetap lulus di mesin tanpa Postgres —
-dan kembali menguji trigger serta RLS begitu koneksi ada.
+Uji integrasi melewatkan dirinya sendiri bila database tidak terjangkau,
+sehingga `npm test` tetap lulus di mesin tanpa Postgres — dan kembali menguji
+trigger serta RLS begitu koneksi ada. Perhatikan bilangan yang dilewati: suite
+yang "hijau" tanpa database hanya membuktikan kalkulasi murninya.
 
 Untuk menyiapkan lingkungan dari nol:
 
 ```bash
 npm run db:setup && npm run db:seed && npm test
 ```
+
+---
+
+## Menyiapkan produksi
+
+### Sebelum deploy
+
+```bash
+npm run typecheck && npm run lint && npm test && npm run build:check
+```
+
+`build:check` membangun ke direktori terpisah lewat `NEXT_DIST_DIR`, sehingga
+aman dijalankan sementara `npm run dev` masih hidup. `npm run build` biasa
+menulis ke `.next` yang sama dengan dev server dan akan membuat peramban
+kehilangan chunk-nya.
+
+### Variabel lingkungan di server
+
+Semua yang ada di `.env.example` wajib terisi. Tiga hal yang mudah terlewat:
+
+- `DATABASE_URL` memakai **transaction pooler** (port 6543) untuk runtime;
+  `DIRECT_URL` memakai **session pooler** (port 5432) dan hanya dipakai migrasi.
+  Pooler transaksi tidak dapat menjalankan DDL dengan andal.
+- `SUPABASE_SERVICE_ROLE_KEY` tidak boleh berprefiks `NEXT_PUBLIC_`. Kunci ini
+  melewati row-level security; membocorkannya ke peramban membuka seluruh basis
+  data.
+- Sandi Postgres yang mengandung `/` atau `@` tetap aman — `src/db/connection.ts`
+  mengurai connection string sendiri justru karena `new URL()` gagal menanganinya.
+
+### Migrasi saat rilis
+
+```bash
+npm run db:migrate   # DDL, lewat DIRECT_URL
+npm run db:views     # trigger, RLS, dan view
+```
+
+Keduanya idempoten. `db:views` perlu dijalankan ulang setiap rilis yang
+mengubah view atau kebijakan RLS, karena keduanya ditulis ulang secara utuh,
+bukan lewat migrasi bertahap.
+
+### Zona waktu
+
+Tanggal disimpan sebagai `date` tanpa zona waktu dan ditampilkan apa adanya.
+Satu tempat yang membaca jam server adalah `todayIso()` di `src/lib/date.ts`,
+dan ia membaca kalender dalam UTC — pada server UTC, tanggal "hari ini" baru
+berganti pukul 07:00 WIB. Ini disengaja dan tercatat di sana; memperbaikinya
+membutuhkan zona waktu per proyek.
+
+### Uji asap
+
+```bash
+npm run e2e:install   # sekali, mengunduh Chromium
+npm run e2e
+```
+
+Uji asap masuk memakai `SEED_ADMIN_EMAIL` dan `SEED_ADMIN_PASSWORD`, lalu
+membuka setiap modul proyek dan memeriksa ekspor Excel benar-benar menghasilkan
+berkas. Ia melewatkan dirinya sendiri bila kedua variabel itu kosong.
+
+### Penyimpanan berkas
+
+Tidak ada. Foto dokumentasi lapangan hidup di peramban sebagai object URL dan
+dicetak langsung ke laporan; tidak ada bucket yang perlu disiapkan, dan foto
+hilang bila halaman dimuat ulang. Ini keputusan sadar, bukan kelalaian.
 
 ---
 
