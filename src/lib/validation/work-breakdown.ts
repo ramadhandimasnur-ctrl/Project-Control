@@ -159,6 +159,40 @@ export const AHSP_LINE_FORM_DEFAULTS = {
   sortOrder: 0,
 } satisfies AhspLineFormInput;
 
+// --- template & duplication -------------------------------------------------
+
+export const templateFormSchema = z.object({
+  code: code('Kode template', 32),
+  name: name('Nama template', 200),
+  notes: optionalText(1000),
+});
+
+export type TemplateFormInput = z.input<typeof templateFormSchema>;
+export type TemplateFormValues = z.output<typeof templateFormSchema>;
+
+export const TEMPLATE_FORM_DEFAULTS = {
+  code: '',
+  name: '',
+  notes: '',
+} satisfies TemplateFormInput;
+
+export const applyTemplateSchema = z.object({
+  templateId: z.string().uuid('Template wajib dipilih.'),
+  mode: z.enum(['APPEND', 'REPLACE'], { message: 'Cara penerapan wajib dipilih.' }),
+});
+
+export type ApplyTemplateInput = z.input<typeof applyTemplateSchema>;
+export type ApplyTemplateValues = z.output<typeof applyTemplateSchema>;
+
+export const duplicateWorkItemSchema = z.object({
+  code: code('Kode pekerjaan baru'),
+  name: name('Uraian pekerjaan baru'),
+  includeTakeoffs: z.boolean(),
+});
+
+export type DuplicateWorkItemInput = z.input<typeof duplicateWorkItemSchema>;
+export type DuplicateWorkItemValues = z.output<typeof duplicateWorkItemSchema>;
+
 export const AHSP_ROLE_LABELS = {
   LABOR: 'A. Tenaga',
   MATERIAL: 'B. Bahan',

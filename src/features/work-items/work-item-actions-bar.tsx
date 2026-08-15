@@ -1,6 +1,6 @@
 'use client';
 
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { BookmarkPlus, Copy, LayoutTemplate, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
@@ -21,11 +21,22 @@ import { type WorkItemFormInput } from '@/lib/validation/work-breakdown';
 import type { WorkItemDeletionImpact } from '@/services/work-breakdown';
 
 import { deleteWorkItemAction } from './actions';
+import { ApplyTemplateDialog } from './apply-template-dialog';
+import { DuplicateWorkItemDialog } from './duplicate-work-item-dialog';
+import { SaveTemplateDialog } from './save-template-dialog';
 import { WorkItemDialog } from './work-item-dialog';
 
 type Lists = {
   units: { id: string; code: string; name: string }[];
   groups: { id: string; code: string; name: string }[];
+};
+
+export type TemplateOption = {
+  id: string;
+  code: string;
+  name: string;
+  unitCode: string;
+  lineCount: number;
 };
 
 export function WorkItemCreateButton({
@@ -58,28 +69,64 @@ export function WorkItemCreateButton({
 export function WorkItemActionsBar({
   projectId,
   workItemId,
+  workItemCode,
   workItemName,
+  unitCode,
   defaultValues,
   volumeLocked,
   impact,
   units,
   groups,
+  templates,
 }: {
   projectId: string;
   workItemId: string;
+  workItemCode: string;
   workItemName: string;
+  unitCode: string;
   defaultValues: WorkItemFormInput;
   volumeLocked: boolean;
   impact: WorkItemDeletionImpact;
+  templates: TemplateOption[];
 } & Lists) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const blocked = impact.progressEntries > 0 || impact.materialTransactions > 0;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
+      <Button variant="outline" size="sm" onClick={() => setApplyingTemplate(true)}>
+        <LayoutTemplate className="size-4" aria-hidden />
+        Terapkan template
+      </Button>
+
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={impact.ahspLines === 0}
+        title={
+          impact.ahspLines === 0
+            ? 'Belum ada baris analisa yang dapat disimpan sebagai template.'
+            : undefined
+        }
+        onClick={() => setSavingTemplate(true)}
+      >
+        <BookmarkPlus className="size-4" aria-hidden />
+        Simpan sebagai template
+      </Button>
+
+      <Button variant="outline" size="sm" onClick={() => setDuplicating(true)}>
+        <Copy className="size-4" aria-hidden />
+        Duplikat
+      </Button>
+
+      <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+
       <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
         <Pencil className="size-4" aria-hidden />
         Ubah
@@ -152,6 +199,43 @@ export function WorkItemActionsBar({
           units={units}
           groups={groups}
           volumeLocked={volumeLocked}
+        />
+      ) : null}
+
+      {savingTemplate ? (
+        <SaveTemplateDialog
+          open
+          onOpenChange={setSavingTemplate}
+          projectId={projectId}
+          workItemId={workItemId}
+          workItemName={workItemName}
+          lineCount={impact.ahspLines}
+        />
+      ) : null}
+
+      {applyingTemplate ? (
+        <ApplyTemplateDialog
+          open
+          onOpenChange={setApplyingTemplate}
+          projectId={projectId}
+          workItemId={workItemId}
+          workItemName={workItemName}
+          unitCode={unitCode}
+          existingLineCount={impact.ahspLines}
+          templates={templates}
+        />
+      ) : null}
+
+      {duplicating ? (
+        <DuplicateWorkItemDialog
+          open
+          onOpenChange={setDuplicating}
+          projectId={projectId}
+          workItemId={workItemId}
+          sourceCode={workItemCode}
+          sourceName={workItemName}
+          ahspLineCount={impact.ahspLines}
+          takeoffCount={impact.takeoffs}
         />
       ) : null}
     </div>

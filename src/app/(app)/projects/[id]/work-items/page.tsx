@@ -13,6 +13,7 @@ import { canEditProjectData } from '@/lib/auth/roles';
 import { EMPTY_VALUE, formatQuantity } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { getWorkItemEstimate } from '@/services/ahsp';
+import { listApplicableTemplates } from '@/services/ahsp-templates';
 import { canViewOrgCosts } from '@/services/org-access';
 import { getProject } from '@/services/projects';
 import { listResources } from '@/services/resources';
@@ -40,11 +41,14 @@ export default async function WorkItemsPage({
   const project = await getProject(user.id, projectId);
   const canEdit = canEditProjectData(project.role);
 
-  const [items, groups, units, showCosts] = await Promise.all([
+  const [items, groups, units, showCosts, templates] = await Promise.all([
     listWorkItems(user.id, projectId),
     listWorkGroups(user.id, projectId),
     listUnits(user.id),
     canViewOrgCosts(user.id),
+    // Only templates whose resources all still exist and are active can be
+    // applied without leaving a half-built analysis behind.
+    canEdit ? listApplicableTemplates(user.id) : Promise.resolve([]),
   ]);
 
   // Selection lives in the URL so a particular analysis can be linked to.
@@ -141,11 +145,14 @@ export default async function WorkItemsPage({
                 <WorkItemActionsBar
                   projectId={projectId}
                   workItemId={selected.id}
+                  workItemCode={selected.code}
                   workItemName={selected.name}
+                  unitCode={selected.unitCode}
                   volumeLocked={selected.hasTakeoffs}
                   impact={impact}
                   units={unitOptions}
                   groups={groupOptions}
+                  templates={templates}
                   defaultValues={{
                     code: selected.code,
                     name: selected.name,

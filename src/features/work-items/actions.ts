@@ -5,11 +5,19 @@ import { revalidatePath } from 'next/cache';
 import { toUserMessage } from '@/lib/errors';
 import {
   ahspLineFormSchema,
+  applyTemplateSchema,
+  duplicateWorkItemSchema,
   takeoffFormSchema,
+  templateFormSchema,
   workGroupFormSchema,
   workItemFormSchema,
 } from '@/lib/validation/work-breakdown';
 import { deleteAhspLine, saveAhspLine } from '@/services/ahsp';
+import {
+  applyTemplate,
+  getTemplateLines,
+  saveTemplateFromWorkItem,
+} from '@/services/ahsp-templates';
 import { requireSessionUser } from '@/services/session';
 import { deleteTakeoff, saveTakeoff } from '@/services/takeoffs';
 import {
@@ -17,6 +25,7 @@ import {
   createWorkItem,
   deleteWorkGroup,
   deleteWorkItem,
+  duplicateWorkItem,
   setWorkItemActive,
   updateWorkGroup,
   updateWorkItem,
@@ -236,4 +245,118 @@ export async function deleteAhspLineAction(
 
   revalidateProject(projectId);
   return { ok: true };
+}
+
+// --- templates & duplication ------------------------------------------------
+
+export async function saveTemplateAction(
+  projectId: string,
+  workItemId: string,
+  raw: unknown,
+): Promise<ActionResult> {
+  const parsed = templateFormSchema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: 'Periksa kembali isian formulir.',
+      fieldErrors: fieldErrorsOf(parsed.error.issues),
+    };
+  }
+
+  try {
+    const user = await requireSessionUser();
+    await saveTemplateFromWorkItem(user, projectId, workItemId, parsed.data);
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidateProject(projectId);
+  return { ok: true };
+}
+
+export type ApplyTemplateActionResult =
+  | { ok: true; added: number; skipped: number; removed: number }
+  | { ok: false; message: string; hint?: string; fieldErrors?: Record<string, string> };
+
+export async function applyTemplateAction(
+  projectId: string,
+  workItemId: string,
+  raw: unknown,
+): Promise<ApplyTemplateActionResult> {
+  const parsed = applyTemplateSchema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: 'Periksa kembali pilihan template.',
+      fieldErrors: fieldErrorsOf(parsed.error.issues),
+    };
+  }
+
+  try {
+    const user = await requireSessionUser();
+    const result = await applyTemplate(
+      user,
+      projectId,
+      workItemId,
+      parsed.data.templateId,
+      parsed.data.mode,
+    );
+    revalidateProject(projectId);
+    return { ok: true, ...result };
+  } catch (error) {
+    return failure(error) as ApplyTemplateActionResult;
+  }
+}
+
+export type TemplatePreviewLine = {
+  resourceCode: string;
+  resourceName: string;
+  unitCode: string;
+  role: string;
+  coefRab: string;
+  coefRap: string;
+  wasteFactor: string;
+};
+
+export type TemplatePreviewResult =
+  | { ok: true; lines: TemplatePreviewLine[] }
+  | { ok: false; message: string; hint?: string };
+
+/** Lets the dialog show what a template contains before it is applied. */
+export async function previewTemplateAction(templateId: string): Promise<TemplatePreviewResult> {
+  try {
+    const user = await requireSessionUser();
+    const lines = await getTemplateLines(user.id, templateId);
+    return { ok: true, lines };
+  } catch (error) {
+    return failure(error) as TemplatePreviewResult;
+  }
+}
+
+export type DuplicateActionResult =
+  | { ok: true; id: string }
+  | { ok: false; message: string; hint?: string; fieldErrors?: Record<string, string> };
+
+export async function duplicateWorkItemAction(
+  projectId: string,
+  workItemId: string,
+  raw: unknown,
+): Promise<DuplicateActionResult> {
+  const parsed = duplicateWorkItemSchema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: 'Periksa kembali isian formulir.',
+      fieldErrors: fieldErrorsOf(parsed.error.issues),
+    };
+  }
+
+  try {
+    const user = await requireSessionUser();
+    const created = await duplicateWorkItem(user, projectId, workItemId, parsed.data);
+    revalidateProject(projectId);
+    return { ok: true, id: created.id };
+  } catch (error) {
+    return failure(error) as DuplicateActionResult;
+  }
 }
