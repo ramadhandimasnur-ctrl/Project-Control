@@ -6,33 +6,13 @@ import { coefficientField, moneyField, percentField, quantityField } from './num
  * Form schemas for the work breakdown and the unit-rate analysis.
  */
 
-const code = (label: string, max = 32) =>
-  z
-    .string()
-    .trim()
-    .min(1, `${label} wajib diisi.`)
-    .max(max, `${label} maksimal ${max} karakter.`)
-    .regex(
-      /^[A-Za-z0-9._/-]+$/,
-      `${label} hanya boleh berisi huruf, angka, titik, garis miring, garis bawah, dan tanda hubung.`,
-    );
-
-const name = (label: string, max = 300) =>
-  z.string().trim().min(1, `${label} wajib diisi.`).max(max, `${label} maksimal ${max} karakter.`);
-
-const optionalText = (max = 500) =>
-  z
-    .string()
-    .trim()
-    .max(max, `Maksimal ${max} karakter.`)
-    .optional()
-    .transform((v) => (v === undefined || v === '' ? null : v));
-
-const optionalId = () =>
-  z
-    .string()
-    .optional()
-    .transform((v) => (v === undefined || v === '' || v === '__none__' ? null : v));
+import {
+  codeField as code,
+  optionalId,
+  optionalText,
+  requiredId,
+  requiredText as name,
+} from './common';
 
 // --- work group -------------------------------------------------------------
 
@@ -61,7 +41,8 @@ export const WORK_GROUP_FORM_DEFAULTS = {
  * is a different statement: a line that is genuinely not billed separately.
  */
 const optionalMoney = (label: string) =>
-  z.union([z.string(), z.number()]).transform((raw, ctx): string | null => {
+  z.union([z.string(), z.number(), z.null(), z.undefined()]).transform((raw, ctx): string | null => {
+    if (raw === null || raw === undefined) return null;
     const text = typeof raw === 'number' ? String(raw) : raw.trim();
     if (text === '') return null;
 
@@ -78,7 +59,7 @@ export const workItemFormSchema = z.object({
   name: name('Uraian pekerjaan'),
   spec: optionalText(500),
   groupId: optionalId(),
-  unitId: z.string().uuid('Satuan wajib dipilih.'),
+  unitId: requiredId('Satuan'),
   volume: quantityField('Volume'),
   contractUnitPrice: optionalMoney('Harga satuan kontrak'),
   progressMethod: z.enum(['VOLUME', 'PERCENT', 'MILESTONE'], {
@@ -129,7 +110,7 @@ export const TAKEOFF_FORM_DEFAULTS = {
 
 export const ahspLineFormSchema = z
   .object({
-    resourceId: z.string().uuid('Sumber daya wajib dipilih.'),
+    resourceId: requiredId('Sumber daya'),
     role: z.enum(['LABOR', 'MATERIAL', 'EQUIPMENT', 'SUBCON', 'PACKAGE'], {
       message: 'Bagian analisa wajib dipilih.',
     }),

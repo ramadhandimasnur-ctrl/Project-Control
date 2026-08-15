@@ -132,7 +132,14 @@ export function SelectField({
   error?: string;
   registration: Registration;
   options: { value: string; label: string }[];
-  /** Rendered as an empty-valued first option, for optional fields. */
+  /**
+   * Label for the "none" option of an optional field.
+   *
+   * It submits an empty string, which `optionalId` in lib/validation/common
+   * normalises to null along with undefined and null. Pairing this prop with
+   * a required field would let the empty value through to the schema, so only
+   * use it where null is a legitimate answer.
+   */
   placeholder?: string;
   disabled?: boolean;
 }) {

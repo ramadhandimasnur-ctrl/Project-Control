@@ -14,41 +14,14 @@ import { coefficientField, dayField, moneyField } from './numeric';
 const RESOURCE_TYPES = ['LABOR', 'MATERIAL', 'EQUIPMENT', 'SUBCON', 'PACKAGE', 'OVERHEAD'] as const;
 const UNIT_DIMENSIONS = ['LENGTH', 'AREA', 'VOLUME', 'MASS', 'COUNT', 'TIME', 'LUMPSUM'] as const;
 
-const code = (label: string, max = 32) =>
-  z
-    .string()
-    .trim()
-    .min(1, `${label} wajib diisi.`)
-    .max(max, `${label} maksimal ${max} karakter.`)
-    .regex(
-      /^[A-Za-z0-9._/-]+$/,
-      `${label} hanya boleh berisi huruf, angka, titik, garis miring, garis bawah, dan tanda hubung.`,
-    );
-
-const name = (label: string, max = 200) =>
-  z.string().trim().min(1, `${label} wajib diisi.`).max(max, `${label} maksimal ${max} karakter.`);
-
-const optionalText = (max = 500) =>
-  z
-    .string()
-    .trim()
-    .max(max, `Maksimal ${max} karakter.`)
-    .optional()
-    .transform((v) => (v === undefined || v === '' ? null : v));
-
-/** A select whose "none" option submits an empty string. */
-const optionalId = () =>
-  z
-    .string()
-    .optional()
-    .transform((v) => (v === undefined || v === '' || v === '__none__' ? null : v));
-
-const days = (label: string) =>
-  z.coerce
-    .number()
-    .int(`${label} harus berupa bilangan bulat.`)
-    .min(0, `${label} tidak boleh negatif.`)
-    .max(3650, `${label} terlalu panjang.`);
+import {
+  codeField as code,
+  daysField as days,
+  optionalId,
+  optionalText,
+  requiredId,
+  requiredText as name,
+} from './common';
 
 // --- resource ---------------------------------------------------------------
 
@@ -57,7 +30,7 @@ export const resourceFormSchema = z.object({
   name: name('Nama'),
   spec: optionalText(300),
   type: z.enum(RESOURCE_TYPES, { message: 'Jenis wajib dipilih.' }),
-  unitId: z.string().uuid('Satuan wajib dipilih.'),
+  unitId: requiredId('Satuan'),
   categoryId: optionalId(),
   leadTimeDays: days('Lead time'),
   notes: optionalText(1000),
