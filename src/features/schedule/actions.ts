@@ -15,6 +15,7 @@ import {
   previewPeriodPlan,
   regeneratePeriods,
   savePlannedDistribution,
+  savePlannedDistributions,
   saveWorkItemSchedule,
   type PeriodPlanPreview,
 } from '@/services/schedule';
@@ -147,6 +148,25 @@ export async function saveDistributionAction(
 
   revalidateSchedule(projectId);
   return { ok: true };
+}
+
+export type SaveDistributionsResult =
+  | { ok: true; rows: number; cells: number }
+  | { ok: false; message: string; hint?: string };
+
+/** Saves every edited row of the matrix at once, as one transaction. */
+export async function saveDistributionsAction(
+  projectId: string,
+  sets: { workItemId: string; cells: { periodId: string; plannedPct: string }[] }[],
+): Promise<SaveDistributionsResult> {
+  try {
+    const user = await requireSessionUser();
+    const result = await savePlannedDistributions(user, projectId, sets);
+    revalidateSchedule(projectId);
+    return { ok: true, ...result };
+  } catch (error) {
+    return failure(error);
+  }
 }
 
 // --- baseline ---------------------------------------------------------------

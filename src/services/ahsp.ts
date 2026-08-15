@@ -13,6 +13,7 @@ import {
   type WeightBasis,
   type WeightReconciliation,
 } from '@/lib/calc/weight';
+import { todayIso } from '@/lib/date';
 import { conflict, notFound } from '@/lib/errors';
 import { type AhspLineFormValues } from '@/lib/validation/work-breakdown';
 
@@ -64,10 +65,6 @@ export type WorkItemEstimateView = {
   missingPrices: MissingPrice[];
 };
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 const EMPTY_SUBTOTALS = (): Record<AhspRole, string> => ({
   LABOR: '0.00',
   MATERIAL: '0.00',
@@ -86,7 +83,7 @@ export async function getWorkItemEstimate(
   userId: string,
   projectId: string,
   workItemId: string,
-  onDate: string = today(),
+  onDate: string = todayIso(),
 ): Promise<WorkItemEstimateView> {
   await assertProjectAccess(userId, projectId, 'VIEWER');
 
@@ -273,7 +270,7 @@ export type ProjectEstimate = {
 export async function getProjectEstimate(
   userId: string,
   projectId: string,
-  onDate: string = today(),
+  onDate: string = todayIso(),
 ): Promise<ProjectEstimate> {
   await assertProjectAccess(userId, projectId, 'VIEWER');
 

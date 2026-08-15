@@ -5,7 +5,8 @@ import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { barPosition } from '@/lib/calc/schedule';
-import { EMPTY_VALUE, formatDay, formatPercent } from '@/lib/format';
+import { ganttScale, isLabelled } from '@/lib/ui/gantt-scale';
+import { formatDay, formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { type GanttRow, type PeriodRow } from '@/services/schedule';
 
@@ -18,11 +19,20 @@ import { ScheduleDialog } from './schedule-dialog';
  * counting period columns: periods are rarely equal — the first and last are
  * usually partial — so a column-counting bar would drift away from the dates it
  * claims to show.
+ *
+ * The track is given a width proportional to the number of periods and allowed
+ * to scroll. Fitting 123 daily columns onto one screen was what made short
+ * tasks look like slivers stacked against the left edge; the geometry was
+ * always right, the canvas was too small to show it.
  */
+
+const LABEL_COL = 'w-72 min-w-72';
+
 export function GanttChart({
   projectId,
   projectStart,
   projectEnd,
+  periodType,
   periods,
   rows,
   canEdit,
@@ -30,32 +40,45 @@ export function GanttChart({
   projectId: string;
   projectStart: string;
   projectEnd: string;
+  periodType: 'DAY' | 'WEEK' | 'MONTH';
   periods: PeriodRow[];
   rows: GanttRow[];
   canEdit: boolean;
 }) {
   const [editing, setEditing] = useState<GanttRow | null>(null);
 
+  const { trackWidthPx, labelStride } = ganttScale(periods.length, periodType);
   const scheduled = rows.filter((row) => row.plannedStart !== null);
 
   return (
     <>
       <div className="overflow-x-auto rounded-lg border">
-        <div className="min-w-[52rem]">
+        <div className="w-max min-w-full">
           <div className="flex border-b bg-muted/40 text-xs font-medium">
-            <div className="w-72 shrink-0 border-r px-3 py-2">Pekerjaan</div>
-            <div className="relative flex-1">
-              <div className="flex h-full">
-                {periods.map((period) => (
-                  <div
-                    key={period.id}
-                    className="flex-1 truncate border-r px-1.5 py-2 text-center text-muted-foreground last:border-r-0"
-                    title={`${formatDay(period.startDate)} – ${formatDay(period.endDate)}`}
-                  >
-                    {period.label}
-                  </div>
-                ))}
-              </div>
+            <div
+              className={cn(
+                LABEL_COL,
+                'sticky left-0 z-20 shrink-0 border-r bg-muted px-3 py-2',
+              )}
+            >
+              Pekerjaan
+            </div>
+            <div className="flex shrink-0" style={{ width: `${trackWidthPx}px` }}>
+              {periods.map((period, index) => (
+                <div
+                  key={period.id}
+                  className={cn(
+                    'shrink-0 overflow-hidden py-2 text-center text-muted-foreground',
+                    isLabelled(index, labelStride) ? 'border-l' : '',
+                  )}
+                  style={{ width: `${trackWidthPx / periods.length}px` }}
+                  title={`${period.label} · ${formatDay(period.startDate)} – ${formatDay(period.endDate)}`}
+                >
+                  {isLabelled(index, labelStride) ? (
+                    <span className="whitespace-nowrap px-1">{period.label}</span>
+                  ) : null}
+                </div>
+              ))}
             </div>
           </div>
 
@@ -67,7 +90,12 @@ export function GanttChart({
 
             return (
               <div key={row.workItemId} className="flex border-b text-sm last:border-b-0">
-                <div className="flex w-72 shrink-0 items-center gap-2 border-r px-3 py-2">
+                <div
+                  className={cn(
+                    LABEL_COL,
+                    'sticky left-0 z-20 flex shrink-0 items-center gap-2 border-r bg-background px-3 py-2',
+                  )}
+                >
                   <span className="font-mono text-xs text-muted-foreground">{row.code}</span>
                   <span className="truncate">{row.name}</span>
                   {row.includeInProgressWeight ? (
@@ -81,11 +109,15 @@ export function GanttChart({
                   )}
                 </div>
 
-                <div className="relative flex-1 py-2">
-                  {/* Gridlines echo the period columns so a bar can be read against them. */}
+                <div className="relative shrink-0 py-2" style={{ width: `${trackWidthPx}px` }}>
+                  {/* Gridlines only where the axis is labelled, so they stay readable. */}
                   <div aria-hidden className="absolute inset-0 flex">
-                    {periods.map((period) => (
-                      <div key={period.id} className="flex-1 border-r last:border-r-0" />
+                    {periods.map((period, index) => (
+                      <div
+                        key={period.id}
+                        className={cn('shrink-0', isLabelled(index, labelStride) ? 'border-l' : '')}
+                        style={{ width: `${trackWidthPx / periods.length}px` }}
+                      />
                     ))}
                   </div>
 
@@ -112,7 +144,7 @@ export function GanttChart({
                         onClick={() => setEditing(row)}
                         title={`${formatDay(row.plannedStart)} – ${formatDay(row.plannedFinish)} (${row.durationDays} hari)`}
                         className={cn(
-                          'absolute top-0 h-6 min-w-[2px] rounded-md bg-primary/80 px-2 text-left text-[10px] leading-6 text-primary-foreground',
+                          'absolute top-0 flex h-6 min-w-1 items-center overflow-hidden rounded-md bg-primary/80 text-[10px] text-primary-foreground',
                           canEdit && 'hover:bg-primary',
                           !row.distributionComplete && 'ring-2 ring-destructive ring-offset-1',
                         )}
@@ -121,7 +153,7 @@ export function GanttChart({
                           width: `${bar.widthPct.times(100).toNumber()}%`,
                         }}
                       >
-                        <span className="truncate">{row.durationDays} hr</span>
+                        <span className="truncate px-1.5">{row.durationDays} hr</span>
                       </button>
                     </div>
                   )}
@@ -136,6 +168,7 @@ export function GanttChart({
         <span>
           {scheduled.length} dari {rows.length} pekerjaan sudah punya tanggal.
         </span>
+        <span>Geser mendatar untuk menyusuri {periods.length} periode.</span>
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden className="inline-block size-3 rounded-sm bg-primary/80" />
           rencana
@@ -161,17 +194,5 @@ export function GanttChart({
         />
       ) : null}
     </>
-  );
-}
-
-/** Compact read-only summary of an item's dates, used by the matrix header. */
-export function ScheduleSummary({ row }: { row: GanttRow }) {
-  if (row.plannedStart === null || row.plannedFinish === null) {
-    return <span className="text-muted-foreground">{EMPTY_VALUE}</span>;
-  }
-  return (
-    <span className="whitespace-nowrap text-muted-foreground">
-      {formatDay(row.plannedStart, 'd MMM')} – {formatDay(row.plannedFinish, 'd MMM')}
-    </span>
   );
 }

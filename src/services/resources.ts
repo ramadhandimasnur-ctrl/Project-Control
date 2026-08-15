@@ -14,6 +14,7 @@ import {
   workItemResources,
 } from '@/db/schema';
 import { type PriceType } from '@/lib/calc/price';
+import { todayIso } from '@/lib/date';
 import { conflict, notFound, validation } from '@/lib/errors';
 
 import { assertOrgAccess, canViewOrgCosts } from './org-access';
@@ -50,10 +51,6 @@ export type ListResourcesInput = {
   offset?: number;
 };
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 /**
  * Catalogue listing with the price actually in force attached.
  *
@@ -69,7 +66,7 @@ export async function listResources(
 
   const limit = Math.min(Math.max(input.limit ?? 50, 1), 500);
   const offset = Math.max(input.offset ?? 0, 0);
-  const onDate = input.onDate ?? today();
+  const onDate = input.onDate ?? todayIso();
   const projectId = input.projectId ?? null;
 
   const search = input.search?.trim();

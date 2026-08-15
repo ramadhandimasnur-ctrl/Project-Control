@@ -363,6 +363,93 @@ describe.skipIf(!ready)('Jadwal & baseline', () => {
         ]),
       ).rejects.toThrow(/bukan milik proyek ini/);
     });
+
+    describe('simpan serentak', () => {
+      it('menyimpan beberapa baris sekaligus', async () => {
+        const [p1, p2] = await periodIds();
+
+        const result = await schedule.savePlannedDistributions(user, projectId, [
+          { workItemId: itemA, cells: [{ periodId: p1!, plannedPct: '1' }] },
+          {
+            workItemId: itemB,
+            cells: [
+              { periodId: p1!, plannedPct: '0.5' },
+              { periodId: p2!, plannedPct: '0.5' },
+            ],
+          },
+        ]);
+
+        expect(result).toEqual({ rows: 2, cells: 3 });
+
+        const [row] = await sql<{ n: number }[]>`
+          SELECT count(*)::int AS n FROM planned_distributions d
+          JOIN work_items w ON w.id = d.work_item_id
+          WHERE w.project_id = ${projectId}
+        `;
+        expect(row?.n).toBe(3);
+      });
+
+      // The user edits the matrix as one document; a partial save would leave
+      // some rows at the new plan and others at the old one.
+      it('tidak menyimpan apa pun bila satu baris ditolak', async () => {
+        const [p1] = await periodIds();
+
+        await schedule.savePlannedDistribution(user, projectId, itemA, [
+          { periodId: p1!, plannedPct: '1' },
+        ]);
+
+        await expect(
+          schedule.savePlannedDistributions(user, projectId, [
+            { workItemId: itemA, cells: [{ periodId: p1!, plannedPct: '0.25' }] },
+            { workItemId: itemB, cells: [{ periodId: p1!, plannedPct: '5' }] },
+          ]),
+        ).rejects.toThrow(/antara 0%/);
+
+        // The original value for A is untouched.
+        const rows = await sql<{ pct: string }[]>`
+          SELECT planned_pct::text AS pct FROM planned_distributions
+          WHERE work_item_id = ${itemA}
+        `;
+        expect(rows).toHaveLength(1);
+        expect(Number(rows[0]?.pct)).toBe(1);
+      });
+
+      it('menolak pekerjaan dari proyek lain tanpa menulis apa pun', async () => {
+        const [p1] = await periodIds();
+
+        await expect(
+          schedule.savePlannedDistributions(user, projectId, [
+            { workItemId: itemA, cells: [{ periodId: p1!, plannedPct: '1' }] },
+            { workItemId: randomUUID(), cells: [{ periodId: p1!, plannedPct: '1' }] },
+          ]),
+        ).rejects.toThrow(/tidak ditemukan pada proyek ini/);
+
+        const rows = await sql`SELECT id FROM planned_distributions WHERE work_item_id = ${itemA}`;
+        expect(rows).toHaveLength(0);
+      });
+
+      it('mengosongkan baris yang seluruh selnya nol', async () => {
+        const [p1] = await periodIds();
+        await schedule.savePlannedDistribution(user, projectId, itemA, [
+          { periodId: p1!, plannedPct: '1' },
+        ]);
+
+        const result = await schedule.savePlannedDistributions(user, projectId, [
+          { workItemId: itemA, cells: [{ periodId: p1!, plannedPct: '0' }] },
+        ]);
+
+        expect(result).toEqual({ rows: 1, cells: 0 });
+        const rows = await sql`SELECT id FROM planned_distributions WHERE work_item_id = ${itemA}`;
+        expect(rows).toHaveLength(0);
+      });
+
+      it('menerima daftar kosong tanpa menulis apa pun', async () => {
+        expect(await schedule.savePlannedDistributions(user, projectId, [])).toEqual({
+          rows: 0,
+          cells: 0,
+        });
+      });
+    });
   });
 
   describe('kurva-S dan baseline', () => {

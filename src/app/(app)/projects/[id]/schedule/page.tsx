@@ -128,6 +128,7 @@ export default async function SchedulePage({ params }: { params: Promise<{ id: s
               projectId={projectId}
               projectStart={overview.projectStart}
               projectEnd={overview.projectEnd}
+              periodType={overview.periodType}
               periods={overview.periods}
               rows={overview.rows}
               canEdit={canEdit}

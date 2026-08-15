@@ -169,6 +169,18 @@ function PeriodDialog({
                 </p>
               ) : null}
 
+              {/*
+                The matrix gets one column per period. A daily calendar over a
+                four-month project is 123 of them, which is a spreadsheet no one
+                fills in by hand — worth saying before it is built, not after.
+              */}
+              {generated.length > 40 ? (
+                <p className="text-xs text-muted-foreground">
+                  Matriks distribusi akan memiliki {generated.length} kolom. Satuan yang lebih besar
+                  jauh lebih mudah diisi bila progres memang dilaporkan mingguan atau bulanan.
+                </p>
+              ) : null}
+
               {preview.wouldDiscardPlan ? (
                 <Alert variant="destructive">
                   <AlertTitle>Rencana pada periode terakhir akan terhapus</AlertTitle>

@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { organizations, users } from '@/db/schema';
 import { type PriceType } from '@/lib/calc/price';
+import { todayIso } from '@/lib/date';
 import { parseUtba, type UtbaParseResult } from '@/lib/import/utba';
 import { readWorkbook, requireSheet, worksheetRows } from '@/lib/import/xlsx';
 import { importUtba, type ImportReport } from '@/services/import-utba';
@@ -26,10 +27,6 @@ function flag(name: string): string | undefined {
   const prefix = `--${name}=`;
   const match = process.argv.find((a) => a.startsWith(prefix));
   return match?.slice(prefix.length);
-}
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function printReport(report: ImportReport, parsed: UtbaParseResult): void {
@@ -85,7 +82,7 @@ async function main(): Promise<void> {
   const priceArg = (flag('price') ?? 'RAP').toUpperCase();
   const priceTypes: PriceType[] =
     priceArg === 'BOTH' ? ['RAB', 'RAP'] : priceArg === 'RAB' ? ['RAB'] : ['RAP'];
-  const onDate = flag('date') ?? today();
+  const onDate = flag('date') ?? todayIso();
   const apply = process.argv.includes('--apply');
 
   const [actor] = await db

@@ -6,6 +6,7 @@ import { db } from '@/db';
 import { withUser } from '@/db/context';
 import { resources, units, workItemResources, workItems } from '@/db/schema';
 import { toDecimal } from '@/lib/calc/decimal';
+import { todayIso } from '@/lib/date';
 import {
   rankByShortage,
   rankByWastage,
@@ -62,14 +63,10 @@ export type MaterialRequirementSummary = {
   topWastage: MaterialRequirementRow[];
 };
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export async function getMaterialRequirement(
   userId: string,
   projectId: string,
-  onDate: string = today(),
+  onDate: string = todayIso(),
 ): Promise<MaterialRequirementSummary> {
   await assertProjectAccess(userId, projectId, 'VIEWER');
   const showCosts = await canViewOrgCosts(userId);

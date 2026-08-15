@@ -398,72 +398,108 @@ async function assertUsablePredecessor(
 
 export type DistributionInput = { periodId: string; plannedPct: string };
 
-/**
- * Replaces a work item's whole row in the distribution matrix.
- *
- * Row-at-a-time saving would let the matrix sit at `Î£ â‰  1` between two writes,
- * which is exactly the state the baseline check exists to prevent, so the row
- * is written as one transaction and cells at zero are deleted rather than
- * stored.
- */
+export type DistributionRowSet = { workItemId: string; cells: readonly DistributionInput[] };
+
+/** Replaces one work item's row in the distribution matrix. */
 export async function savePlannedDistribution(
   user: SessionUser,
   projectId: string,
   workItemId: string,
   rows: readonly DistributionInput[],
 ): Promise<void> {
+  await savePlannedDistributions(user, projectId, [{ workItemId, cells: rows }]);
+}
+
+/**
+ * Replaces whole rows of the distribution matrix, all in one transaction.
+ *
+ * Saving is by row rather than by cell because a half-written row sits at
+ * `Σ ≠ 1`, which is exactly the state that blocks a baseline. Saving several
+ * rows at once goes further: the user edits the matrix as one document, so
+ * either the whole edit lands or none of it does.
+ *
+ * Cells at zero are deleted rather than stored, keeping the matrix sparse.
+ */
+export async function savePlannedDistributions(
+  user: SessionUser,
+  projectId: string,
+  sets: readonly DistributionRowSet[],
+): Promise<{ rows: number; cells: number }> {
   const access = await assertProjectAccess(user.id, projectId, 'ENGINEER');
 
-  const [item] = await db
+  if (sets.length === 0) return { rows: 0, cells: 0 };
+
+  const workItemIds = [...new Set(sets.map((set) => set.workItemId))];
+
+  const items = await db
     .select({ id: workItems.id })
     .from(workItems)
-    .where(and(eq(workItems.id, workItemId), eq(workItems.projectId, projectId)))
-    .limit(1);
+    .where(and(inArray(workItems.id, workItemIds), eq(workItems.projectId, projectId)));
 
-  if (!item) throw notFound('Pekerjaan tidak ditemukan pada proyek ini.');
+  if (items.length !== workItemIds.length) {
+    throw notFound('Ada pekerjaan yang tidak ditemukan pada proyek ini.');
+  }
 
   const periods = await db
     .select({ id: schedulePeriods.id })
     .from(schedulePeriods)
     .where(eq(schedulePeriods.projectId, projectId));
 
+  /*
+   * Everything is checked before anything is written. A rejection part way
+   * through would leave some rows saved and others not — the inconsistency
+   * this function exists to prevent.
+   */
   const known = new Set(periods.map((period) => period.id));
-  for (const row of rows) {
-    if (!known.has(row.periodId)) {
-      throw validation('Ada periode yang bukan milik proyek ini.');
-    }
-    const value = toDecimal(row.plannedPct);
-    if (value.lessThan(0) || value.greaterThan(1)) {
-      throw validation('Porsi periode harus antara 0% dan 100%.');
+  for (const set of sets) {
+    for (const row of set.cells) {
+      if (!known.has(row.periodId)) {
+        throw validation('Ada periode yang bukan milik proyek ini.');
+      }
+      const value = toDecimal(row.plannedPct);
+      if (value.lessThan(0) || value.greaterThan(1)) {
+        throw validation('Porsi periode harus antara 0% dan 100%.');
+      }
     }
   }
 
-  const meaningful = rows.filter((row) => !toDecimal(row.plannedPct).isZero());
+  const prepared = sets.map((set) => ({
+    workItemId: set.workItemId,
+    meaningful: set.cells.filter((row) => !toDecimal(row.plannedPct).isZero()),
+  }));
 
-  await withUser(user.id, async (tx) => {
-    await tx.delete(plannedDistributions).where(eq(plannedDistributions.workItemId, workItemId));
+  return withUser(user.id, async (tx) => {
+    await tx
+      .delete(plannedDistributions)
+      .where(inArray(plannedDistributions.workItemId, workItemIds));
 
-    if (meaningful.length > 0) {
-      await tx.insert(plannedDistributions).values(
-        meaningful.map((row) => ({
-          workItemId,
-          periodId: row.periodId,
-          plannedPct: toPercentString(row.plannedPct),
-          createdBy: user.id,
-          updatedBy: user.id,
-        })),
-      );
+    const values = prepared.flatMap((set) =>
+      set.meaningful.map((row) => ({
+        workItemId: set.workItemId,
+        periodId: row.periodId,
+        plannedPct: toPercentString(row.plannedPct),
+        createdBy: user.id,
+        updatedBy: user.id,
+      })),
+    );
+
+    if (values.length > 0) {
+      await tx.insert(plannedDistributions).values(values);
     }
 
-    await writeAuditLog(tx, {
-      orgId: access.orgId,
-      projectId,
-      tableName: 'planned_distributions',
-      recordId: workItemId,
-      action: 'UPDATE',
-      after: { cells: meaningful.length },
-      actorId: user.id,
-    });
+    for (const set of prepared) {
+      await writeAuditLog(tx, {
+        orgId: access.orgId,
+        projectId,
+        tableName: 'planned_distributions',
+        recordId: set.workItemId,
+        action: 'UPDATE',
+        after: { cells: set.meaningful.length },
+        actorId: user.id,
+      });
+    }
+
+    return { rows: prepared.length, cells: values.length };
   });
 }
 
@@ -552,7 +588,7 @@ export type GanttRow = {
   predecessorCode: string | null;
   dependencyType: 'FS' | 'SS' | 'FF' | 'SF';
   lagDays: number;
-  /** Î£ of this item's row in the matrix, and whether it equals 1. */
+  /** Σ of this item's row in the matrix, and whether it equals 1. */
   distributionTotal: string;
   distributionComplete: boolean;
 };
@@ -772,7 +808,7 @@ export async function listBaselines(userId: string, projectId: string): Promise<
  *
  * Design decision 12: the planned S-curve reads from the baseline, so the copy
  * has to be complete and taken in one transaction. A plan where some weighted
- * item does not sum to 1 is refused outright â€” a baseline that starts from a
+ * item does not sum to 1 is refused outright — a baseline that starts from a
  * broken plan produces a curve that never reaches 100% and no one can tell why.
  */
 export async function createBaseline(
