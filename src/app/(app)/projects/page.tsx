@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { ButtonLink } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -45,10 +45,10 @@ export default async function ProjectsPage() {
         title="Proyek"
         description="Setiap proyek memiliki pekerjaan, sumber daya, jadwal, dan kas sendiri."
         actions={
-          <Button render={<Link href="/projects/new" />}>
+          <ButtonLink href="/projects/new">
             <Plus className="size-4" aria-hidden />
             Proyek baru
-          </Button>
+          </ButtonLink>
         }
       />
 
@@ -58,10 +58,10 @@ export default async function ProjectsPage() {
           title="Belum ada proyek"
           description="Buat proyek pertama Anda untuk mulai menyusun estimasi, jadwal, dan pengendalian biaya."
           action={
-            <Button render={<Link href="/projects/new" />}>
+            <ButtonLink href="/projects/new">
               <Plus className="size-4" aria-hidden />
               Buat proyek
-            </Button>
+            </ButtonLink>
           }
         />
       ) : (

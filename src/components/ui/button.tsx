@@ -1,5 +1,7 @@
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
+import Link from "next/link"
+import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
@@ -55,4 +57,31 @@ function Button({
   )
 }
 
-export { Button, buttonVariants }
+/**
+ * A link that looks like a button.
+ *
+ * Navigation used to go through `<Button render={<Link/>}>`, but Base UI's
+ * button assumes it controls a native <button> and warned on every page that
+ * did it. Setting `nativeButton={false}` silences the warning at the cost of
+ * stamping `role="button"` onto the anchor, which makes a screen reader
+ * announce "button" for something that navigates.
+ *
+ * Borrowing the styles instead keeps the element an ordinary link: right
+ * semantics, working middle-click and "open in new tab", no warning.
+ */
+function ButtonLink({
+  className,
+  variant = "default",
+  size = "default",
+  ...props
+}: React.ComponentProps<typeof Link> & VariantProps<typeof buttonVariants>) {
+  return (
+    <Link
+      data-slot="button"
+      className={cn(buttonVariants({ variant, size, className }))}
+      {...props}
+    />
+  )
+}
+
+export { Button, ButtonLink, buttonVariants }

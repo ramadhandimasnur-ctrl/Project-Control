@@ -1,8 +1,7 @@
 import { FileQuestion } from 'lucide-react';
-import Link from 'next/link';
 
 import { EmptyState } from '@/components/empty-state';
-import { Button } from '@/components/ui/button';
+import { ButtonLink } from '@/components/ui/button';
 
 export default function NotFound() {
   return (
@@ -12,7 +11,7 @@ export default function NotFound() {
         title="Halaman tidak ditemukan"
         description="Alamat yang Anda buka tidak ada, atau Anda tidak memiliki akses ke data tersebut."
         action={
-          <Button render={<Link href="/projects" />}>Kembali ke daftar proyek</Button>
+          <ButtonLink href="/projects">Kembali ke daftar proyek</ButtonLink>
         }
       />
     </div>

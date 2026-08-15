@@ -3,7 +3,7 @@ import Link from 'next/link';
 
 import { PageHeader } from '@/components/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
+import { ButtonLink } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { canViewCosts } from '@/lib/auth/roles';
 import { formatCurrency, formatDay, formatPercent } from '@/lib/format';
@@ -60,12 +60,9 @@ export default async function ProjectDashboardPage({
         title={project.name}
         description="Ringkasan konfigurasi proyek."
         actions={
-          <Button
-            variant="outline"
-            render={<Link href={`/projects/${project.id}/settings`} />}
-          >
+          <ButtonLink variant="outline" href={`/projects/${project.id}/settings`}>
             Ubah pengaturan
-          </Button>
+          </ButtonLink>
         }
       />
 

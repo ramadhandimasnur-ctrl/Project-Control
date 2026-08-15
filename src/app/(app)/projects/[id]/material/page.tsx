@@ -6,7 +6,7 @@ import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { ButtonLink } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -42,14 +42,14 @@ export default async function MaterialPage({ params }: { params: Promise<{ id: s
         description="Kebutuhan diturunkan dari koefisien RAP setiap pekerjaan, bukan diketik ulang."
         actions={
           <>
-            <Button variant="outline" render={<Link href={`/projects/${projectId}/warehouse`} />}>
+            <ButtonLink variant="outline" href={`/projects/${projectId}/warehouse`}>
               <Warehouse className="size-4" aria-hidden />
               Gudang
-            </Button>
-            <Button render={<Link href={`/projects/${projectId}/purchases`} />}>
+            </ButtonLink>
+            <ButtonLink href={`/projects/${projectId}/purchases`}>
               <Boxes className="size-4" aria-hidden />
               Pembelian
-            </Button>
+            </ButtonLink>
           </>
         }
       />
@@ -60,9 +60,9 @@ export default async function MaterialPage({ params }: { params: Promise<{ id: s
           title="Belum ada kebutuhan material"
           description="Kebutuhan terbentuk dari analisa harga satuan. Susun AHSP pekerjaan terlebih dahulu."
           action={
-            <Button render={<Link href={`/projects/${projectId}/work-items`} />}>
+            <ButtonLink href={`/projects/${projectId}/work-items`}>
               Buka Pekerjaan &amp; AHSP
-            </Button>
+            </ButtonLink>
           }
         />
       ) : (

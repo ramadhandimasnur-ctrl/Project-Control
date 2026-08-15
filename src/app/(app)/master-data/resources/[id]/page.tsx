@@ -1,12 +1,11 @@
 import { ArrowLeft } from 'lucide-react';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { PageHeader } from '@/components/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { ButtonLink } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -74,15 +73,15 @@ export default async function ResourceDetailPage({
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 p-6">
-      <Button
+      <ButtonLink
         variant="ghost"
         size="sm"
-        render={<Link href="/master-data/resources" />}
+        href="/master-data/resources"
         className="-ml-2"
       >
         <ArrowLeft className="size-4" aria-hidden />
         Kembali ke daftar
-      </Button>
+      </ButtonLink>
 
       <PageHeader
         title={resource.name}

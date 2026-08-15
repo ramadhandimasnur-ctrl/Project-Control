@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { ButtonLink } from '@/components/ui/button';
 import { ResourceCreateButton } from '@/features/master-data/resource-create-button';
 import { assertOrgAccess } from '@/services/org-access';
 import { listUnits } from '@/services/units';
@@ -80,10 +80,10 @@ export default async function ResourcesPage({
         actions={
           canManage ? (
             <>
-              <Button variant="outline" render={<Link href="/master-data/import" />}>
+              <ButtonLink variant="outline" href="/master-data/import">
                 <FileSpreadsheet className="size-4" aria-hidden />
                 Impor Excel
-              </Button>
+              </ButtonLink>
               <ResourceCreateButton
                 units={units.map((u) => ({ id: u.id, code: u.code, name: u.name }))}
                 categories={categories.map((c) => ({ id: c.id, name: c.name }))}

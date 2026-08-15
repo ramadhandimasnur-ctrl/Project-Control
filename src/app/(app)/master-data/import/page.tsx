@@ -1,10 +1,9 @@
 import { ArrowLeft } from 'lucide-react';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { PageHeader } from '@/components/page-header';
-import { Button } from '@/components/ui/button';
+import { ButtonLink } from '@/components/ui/button';
 import { assertOrgAccess } from '@/services/org-access';
 import { requireSessionUser } from '@/services/session';
 
@@ -22,15 +21,15 @@ export default async function ImportPage() {
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 p-6">
-      <Button
+      <ButtonLink
         variant="ghost"
         size="sm"
-        render={<Link href="/master-data/resources" />}
+        href="/master-data/resources"
         className="-ml-2"
       >
         <ArrowLeft className="size-4" aria-hidden />
         Kembali ke katalog
-      </Button>
+      </ButtonLink>
 
       <PageHeader
         title="Impor daftar sumber daya"
