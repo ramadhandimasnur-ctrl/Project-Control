@@ -1,5 +1,6 @@
 node_modules/
-# Covers .next and the .next-check output used by `npm run build:check`.
+# Covers .next plus the separate build outputs: .next-check for
+# `npm run build:check` and .next-e2e for the Playwright web server.
 .next*/
 out/
 build/
