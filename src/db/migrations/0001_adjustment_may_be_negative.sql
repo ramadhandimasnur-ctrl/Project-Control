@@ -1,0 +1,2 @@
+ALTER TABLE "material_transactions" DROP CONSTRAINT "material_transactions_qty_positive";--> statement-breakpoint
+ALTER TABLE "material_transactions" ADD CONSTRAINT "material_transactions_qty_valid" CHECK ("material_transactions"."qty" <> 0 AND ("material_transactions"."qty" > 0 OR "material_transactions"."txn_type" = 'ADJUSTMENT'));

@@ -198,15 +198,17 @@ describe('ranking helpers', () => {
     { code: 'a', shortage: toDecimal('10'), wastage: toDecimal('-5') },
     { code: 'b', shortage: toDecimal('200'), wastage: toDecimal('40') },
     { code: 'c', shortage: toDecimal('0'), wastage: toDecimal('15') },
+    // Zero wastage: decimal.js calls this positive, so it needs its own case.
+    { code: 'd', shortage: toDecimal('5'), wastage: toDecimal('0') },
   ];
 
   it('ranks the biggest shortage first', () => {
-    expect(rankByShortage(rows).map((r) => r.code)).toEqual(['b', 'a', 'c']);
+    expect(rankByShortage(rows).map((r) => r.code)).toEqual(['b', 'a', 'd', 'c']);
   });
 
-  // A negative gap is an unrecorded issue, not waste; it does not belong on a
-  // list of things being wasted.
-  it('ranks wastage and excludes under-issued resources', () => {
+  // A negative gap is an unrecorded issue, not waste, and zero is not waste
+  // either; neither belongs on a list of what is being wasted.
+  it('ranks wastage and excludes resources that waste nothing', () => {
     expect(rankByWastage(rows).map((r) => r.code)).toEqual(['b', 'c']);
   });
 

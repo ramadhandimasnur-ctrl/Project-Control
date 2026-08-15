@@ -100,7 +100,9 @@ export function replayLedger(movements: readonly InventoryMovement[]): LedgerEnt
 
     let unitCost: Decimal;
 
-    if (delta.isPositive() && declaredCost !== null) {
+    // Strictly greater than zero: decimal.js counts zero as positive, and a
+    // zero-quantity row must not be treated as a receipt that re-prices stock.
+    if (delta.greaterThan(0) && declaredCost !== null) {
       // A receipt at a known price: this is the only thing that moves the
       // average.  newAvg = (prevQty x prevAvg + inQty x inPrice) / (prevQty + inQty)
       const newBalance = balance.plus(delta);

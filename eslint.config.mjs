@@ -11,7 +11,8 @@ const config = [
   {
     ignores: [
       'node_modules/**',
-      '.next/**',
+      // Covers .next and the .next-check output of `npm run build:check`.
+      '.next*/**',
       'coverage/**',
       'legacy/**',
       'src/db/migrations/**',

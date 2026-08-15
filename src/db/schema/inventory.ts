@@ -133,7 +133,12 @@ export const materialTransactions = pgTable(
 
     txnType: materialTxnTypeEnum('txn_type').notNull(),
     txnDate: day('txn_date').notNull(),
-    /** Always positive; direction comes from `txn_type`. */
+    /**
+     * Positive for every type except ADJUSTMENT, whose sign carries its own
+     * direction. A stock count that finds less than the books claim has to be
+     * recordable, and OUT cannot serve: it requires a work item to charge,
+     * while shrinkage belongs to no work item at all.
+     */
     qty: quantity('qty').notNull(),
     unitId: uuid('unit_id')
       .notNull()
@@ -166,7 +171,10 @@ export const materialTransactions = pgTable(
     ),
     index('material_transactions_work_item_idx').on(t.workItemId),
     index('material_transactions_purchase_item_idx').on(t.purchaseItemId),
-    check('material_transactions_qty_positive', sql`${t.qty} > 0`),
+    check(
+      'material_transactions_qty_valid',
+      sql`${t.qty} <> 0 AND (${t.qty} > 0 OR ${t.txnType} = 'ADJUSTMENT')`,
+    ),
     check(
       'material_transactions_unit_cost_nonneg',
       sql`${t.unitCost} IS NULL OR ${t.unitCost} >= 0`,

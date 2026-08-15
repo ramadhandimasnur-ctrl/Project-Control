@@ -57,6 +57,33 @@ Dokumen mencantumkan `suppliers` di bagian 4.6 (Material), tetapi tabelnya
 ber-scope `org_id`, bukan `project_id`. Definisinya diletakkan bersama master
 data lain di `src/db/schema/resources.ts`.
 
+---
+
+## Fase 4
+
+### A19. `ADJUSTMENT` boleh bernilai negatif — menyimpang dari bagian 4.6
+
+Dokumen menetapkan `material_transactions.qty` **selalu positif**, dengan arah
+ditentukan `txn_type`. Aturan itu membuat satu kejadian lapangan yang lazim
+menjadi mustahil dicatat: **stock opname yang menemukan barang kurang dari
+catatan.**
+
+`OUT` tidak dapat dipakai untuk itu, sebab CHECK-nya mewajibkan `work_item_id`
+— susut gudang tidak menempel pada pekerjaan mana pun. Tanpa jalan lain,
+selisih opname hanya bisa dicatat sebagai angka positif yang justru menambah
+stok, atau tidak dicatat sama sekali.
+
+Migrasi `0001_adjustment_may_be_negative` melonggarkan constraint menjadi:
+
+```sql
+qty <> 0 AND (qty > 0 OR txn_type = 'ADJUSTMENT')
+```
+
+Seluruh tipe lain tetap wajib positif; hanya `ADJUSTMENT` yang boleh negatif,
+dan nol tetap ditolak untuk semuanya. `signedQty()` di `lib/calc/inventory.ts`
+memperlakukan `ADJUSTMENT` sebagai satu-satunya tipe yang membawa tandanya
+sendiri.
+
 ### A6a. Peran `app_runtime` — tanpa ini RLS tidak berlaku sama sekali
 
 Ditemukan saat verifikasi terhadap database sungguhan: peran `postgres` milik

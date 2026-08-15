@@ -187,7 +187,10 @@ export function rankByShortage<T extends { shortage: Decimal }>(rows: readonly T
 /** Largest wastage first, ignoring resources that are merely under-issued. */
 export function rankByWastage<T extends { wastage: Decimal }>(rows: readonly T[]): T[] {
   return [...rows]
-    .filter((row) => row.wastage.isPositive())
+    // Strictly greater than zero: decimal.js counts zero as positive, and a
+    // resource with no wastage does not belong on a list of what is being
+    // wasted.
+    .filter((row) => row.wastage.greaterThan(0))
     .sort((a, b) => b.wastage.comparedTo(a.wastage));
 }
 
