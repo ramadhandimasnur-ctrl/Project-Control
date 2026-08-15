@@ -93,6 +93,8 @@ describe.skipIf(!ready)('integritas database', () => {
     if (!sql) return;
     await sql.begin(async (tx) => {
       await tx`SELECT set_config('app.bypass_rls', 'on', true)`;
+      // Deleting a project cascades into the append-only ledgers.
+      await tx`SELECT set_config('app.allow_hard_delete', 'on', true)`;
       await tx`DELETE FROM projects WHERE org_id IN (${orgA}, ${orgB})`;
       await tx`DELETE FROM resources WHERE org_id IN (${orgA}, ${orgB})`;
       await tx`DELETE FROM units WHERE org_id IN (${orgA}, ${orgB})`;
@@ -128,6 +130,41 @@ describe.skipIf(!ready)('integritas database', () => {
           await tx`DELETE FROM material_transactions WHERE id = ${txnId}`;
         }),
       ).rejects.toThrow(/tidak dapat dihapus/i);
+    });
+
+    // Regression: the delete trigger also fires on FK cascade, so without the
+    // escape hatch a project could never be removed once it had one movement.
+    it('still allows a project to be deleted, cascading through the ledger', async () => {
+      const orgId = randomUUID();
+      const projectId = randomUUID();
+      const warehouseId = randomUUID();
+
+      await sql.begin(async (tx) => {
+        await tx`SELECT set_config('app.bypass_rls', 'on', true)`;
+        await tx`INSERT INTO organizations (id, name) VALUES (${orgId}, 'Org Hapus (uji)')`;
+        await tx`
+          INSERT INTO projects (id, org_id, code, name, start_date, end_date)
+          VALUES (${projectId}, ${orgId}, ${`DEL-${projectId.slice(0, 8)}`}, 'Proyek Hapus', '2026-01-01', '2026-12-31')
+        `;
+        await tx`INSERT INTO warehouses (id, project_id, name) VALUES (${warehouseId}, ${projectId}, 'Gudang')`;
+        await tx`
+          INSERT INTO material_transactions (project_id, warehouse_id, resource_id, txn_type, txn_date, qty, unit_id)
+          VALUES (${projectId}, ${warehouseId}, ${resourceId}, 'IN', '2026-03-01', 5, ${unitId})
+        `;
+      });
+
+      await sql.begin(async (tx) => {
+        await tx`SELECT set_config('app.bypass_rls', 'on', true)`;
+        await tx`SELECT set_config('app.allow_hard_delete', 'on', true)`;
+        await tx`DELETE FROM projects WHERE id = ${projectId}`;
+        await tx`DELETE FROM organizations WHERE id = ${orgId}`;
+      });
+
+      const rows = await sql.begin(async (tx) => {
+        await tx`SELECT set_config('app.bypass_rls', 'on', true)`;
+        return tx`SELECT id FROM material_transactions WHERE project_id = ${projectId}`;
+      });
+      expect(rows).toHaveLength(0);
     });
 
     it('allows a void, which is the sanctioned correction', async () => {

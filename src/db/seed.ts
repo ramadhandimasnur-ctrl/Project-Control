@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { createClient } from '@supabase/supabase-js';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { estimateWorkItem, type EstimateLine } from '@/lib/calc/estimate';
 import { computeWeights, reconcileContractValue, type WeightInput } from '@/lib/calc/weight';
@@ -95,6 +95,8 @@ async function purgeExistingDemo(db: Db): Promise<boolean> {
 
   // Deletion order follows the RESTRICT constraints: projects cascade to their
   // own children, then master data, then the users, then the organisation.
+  // The cascade reaches the append-only ledgers, hence the escape hatch.
+  await db.execute(sql`SELECT set_config('app.allow_hard_delete', 'on', false)`);
   await db.delete(projects).where(eq(projects.orgId, org.id));
   await db.delete(resources).where(eq(resources.orgId, org.id));
   await db.delete(units).where(eq(units.orgId, org.id));

@@ -81,9 +81,22 @@ BEGIN
 END;
 $$;
 
+/**
+ * Blocks ordinary deletes on the ledgers.
+ *
+ * One escape hatch: `app.allow_hard_delete = 'on'`. Removing a whole project
+ * cascades into these tables, and without the hatch the cascade would abort —
+ * a project could never be deleted once it had a single transaction. The flag
+ * is transaction-local and set only by the project-deletion service and the
+ * maintenance scripts, so a stray UPDATE or DELETE is still refused.
+ */
 CREATE OR REPLACE FUNCTION pc_block_delete() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
+  IF coalesce(current_setting('app.allow_hard_delete', true), '') = 'on' THEN
+    RETURN OLD;
+  END IF;
+
   RAISE EXCEPTION
     'Baris pada tabel % tidak dapat dihapus. Gunakan pembatalan (VOID) agar jejak audit tetap utuh.', TG_TABLE_NAME
     USING ERRCODE = 'restrict_violation';
@@ -189,6 +202,12 @@ DECLARE
   parent_status text;
   parent_id uuid;
 BEGIN
+  -- Same exception as the ledger triggers: deleting a project cascades through
+  -- here, and a posted purchase would otherwise pin the project forever.
+  IF TG_OP = 'DELETE' AND coalesce(current_setting('app.allow_hard_delete', true), '') = 'on' THEN
+    RETURN OLD;
+  END IF;
+
   parent_id := COALESCE(NEW.purchase_id, OLD.purchase_id);
   SELECT p.status INTO parent_status FROM public.purchases p WHERE p.id = parent_id;
 

@@ -3,6 +3,7 @@ import 'server-only';
 import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 
 import { db } from '@/db';
+import { withUser } from '@/db/context';
 import { projectMembers, projects, users } from '@/db/schema';
 import { canDeleteProject, canEditContractTerms, type ProjectRole } from '@/lib/auth/roles';
 import { conflict, forbidden, notFound } from '@/lib/errors';
@@ -116,7 +117,9 @@ export async function createProject(
     );
   }
 
-  return db.transaction(async (tx) => {
+  // Bound to the acting user: `audit_logs` and every other project-scoped
+  // table enforces row-level security, which needs `app.current_user_id` set.
+  return withUser(user.id, async (tx) => {
     const [created] = await tx
       .insert(projects)
       .values({ ...values, orgId: user.orgId, createdBy: user.id, updatedBy: user.id })
@@ -182,7 +185,7 @@ export async function updateProject(
     }
   }
 
-  await db.transaction(async (tx) => {
+  await withUser(user.id, async (tx) => {
     await tx
       .update(projects)
       .set({ ...values, updatedBy: user.id })
@@ -212,18 +215,23 @@ export async function getProjectDeletionImpact(
 ): Promise<{ workItems: number; progressEntries: number; materialTransactions: number; purchases: number }> {
   await assertProjectAccess(userId, projectId, 'PROJECT_MANAGER');
 
-  const [row] = await db.execute<{
-    work_items: number;
-    progress_entries: number;
-    material_transactions: number;
-    purchases: number;
-  }>(sql`
-    SELECT
-      (SELECT count(*)::int FROM work_items            WHERE project_id = ${projectId}) AS work_items,
-      (SELECT count(*)::int FROM progress_entries      WHERE project_id = ${projectId}) AS progress_entries,
-      (SELECT count(*)::int FROM material_transactions WHERE project_id = ${projectId}) AS material_transactions,
-      (SELECT count(*)::int FROM purchases             WHERE project_id = ${projectId}) AS purchases
-  `);
+  // All four tables carry FORCE ROW LEVEL SECURITY. Counted outside a user
+  // context they would every one of them return zero — a confirmation dialog
+  // that understates what it is about to destroy.
+  const [row] = await withUser(userId, (tx) =>
+    tx.execute<{
+      work_items: number;
+      progress_entries: number;
+      material_transactions: number;
+      purchases: number;
+    }>(sql`
+      SELECT
+        (SELECT count(*)::int FROM work_items            WHERE project_id = ${projectId}) AS work_items,
+        (SELECT count(*)::int FROM progress_entries      WHERE project_id = ${projectId}) AS progress_entries,
+        (SELECT count(*)::int FROM material_transactions WHERE project_id = ${projectId}) AS material_transactions,
+        (SELECT count(*)::int FROM purchases             WHERE project_id = ${projectId}) AS purchases
+    `),
+  );
 
   return {
     workItems: row?.work_items ?? 0,
@@ -243,7 +251,12 @@ export async function deleteProject(user: SessionUser, projectId: string): Promi
   const [before] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
   if (!before) throw notFound('Proyek tidak ditemukan.');
 
-  await db.transaction(async (tx) => {
+  await withUser(user.id, async (tx) => {
+    // Removing the project cascades into the append-only ledgers, whose delete
+    // triggers refuse ordinary deletes. This is the one sanctioned exception,
+    // and it lasts only for this transaction.
+    await tx.execute(sql`SELECT set_config('app.allow_hard_delete', 'on', true)`);
+
     // Written before the delete: the audit row references the project, and the
     // cascade would otherwise remove it along with everything else.
     await writeAuditLog(tx, {

@@ -3,6 +3,7 @@ import 'server-only';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 
 import { db } from '@/db';
+import { withUser } from '@/db/context';
 import { projectMembers, users } from '@/db/schema';
 import { PROJECT_ROLE_LABELS, type ProjectRole } from '@/lib/auth/roles';
 import { conflict, notFound, validation } from '@/lib/errors';
@@ -76,7 +77,7 @@ export async function addMember(
     );
   }
 
-  await db.transaction(async (tx) => {
+  await withUser(actor.id, async (tx) => {
     const [created] = await tx
       .insert(projectMembers)
       .values({ projectId, userId, role, createdBy: actor.id, updatedBy: actor.id })
@@ -119,7 +120,7 @@ export async function changeMemberRole(
 
   await assertProjectKeepsSteward(projectId, member.id, role);
 
-  await db.transaction(async (tx) => {
+  await withUser(actor.id, async (tx) => {
     await tx
       .update(projectMembers)
       .set({ role, updatedBy: actor.id })
@@ -161,7 +162,7 @@ export async function removeMember(
 
   await assertProjectKeepsSteward(projectId, member.id, null);
 
-  await db.transaction(async (tx) => {
+  await withUser(actor.id, async (tx) => {
     await tx.delete(projectMembers).where(eq(projectMembers.id, memberId));
 
     await writeAuditLog(tx, {
