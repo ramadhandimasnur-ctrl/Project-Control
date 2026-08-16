@@ -34,5 +34,30 @@ export const registerSchema = z
     path: ['confirmPassword'],
   });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().min(1, 'Email wajib diisi.').email('Format email tidak valid.'),
+});
+
+/**
+ * The new password, twice.
+ *
+ * Same bounds as registration — 72 is bcrypt's own ceiling, and a password
+ * silently truncated at sign-up would stop matching the one typed here.
+ */
+export const resetPasswordSchema = z
+  .object({
+    password: z
+      .string()
+      .min(8, 'Kata sandi minimal 8 karakter.')
+      .max(72, 'Kata sandi maksimal 72 karakter.'),
+    confirmPassword: z.string(),
+  })
+  .refine((v) => v.password === v.confirmPassword, {
+    message: 'Konfirmasi kata sandi tidak cocok.',
+    path: ['confirmPassword'],
+  });
+
 export type LoginValues = z.output<typeof loginSchema>;
 export type RegisterValues = z.output<typeof registerSchema>;
+export type ForgotPasswordValues = z.output<typeof forgotPasswordSchema>;
+export type ResetPasswordValues = z.output<typeof resetPasswordSchema>;

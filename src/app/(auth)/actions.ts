@@ -6,7 +6,12 @@ import { redirect } from 'next/navigation';
 import { db } from '@/db';
 import { withBypass } from '@/db/context';
 import { organizations, users } from '@/db/schema';
-import { loginSchema, registerSchema } from '@/lib/validation/auth';
+import {
+  forgotPasswordSchema,
+  loginSchema,
+  registerSchema,
+  resetPasswordSchema,
+} from '@/lib/validation/auth';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
   assertUsernameAvailable,
@@ -226,4 +231,99 @@ export async function signOutAction(): Promise<void> {
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();
   redirect('/login');
+}
+
+/**
+ * Sends the reset link.
+ *
+ * The reply is the same whether or not the address is registered. Saying "email
+ * tidak terdaftar" turns this form into a way to test which addresses hold
+ * accounts — the same reasoning that keeps the sign-in error vague, and it
+ * matters more here because this form needs no password to probe with.
+ *
+ * A failure from Supabase is swallowed for the same reason: a rate-limit or a
+ * bounce would otherwise be reported for real addresses and not for made-up
+ * ones, which answers the question the wording refuses to.
+ */
+export async function requestPasswordResetAction(
+  _prev: AuthFormState,
+  formData: FormData,
+): Promise<AuthFormState> {
+  const parsed = forgotPasswordSchema.safeParse({ email: formData.get('email') });
+
+  if (!parsed.success) {
+    return { fieldErrors: fieldErrorsOf(parsed.error.issues) };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  await supabase.auth.resetPasswordForEmail(parsed.data.email, {
+    redirectTo: passwordResetRedirectUrl(),
+  });
+
+  return {
+    notice:
+      'Bila email tersebut terdaftar, tautan untuk mengatur ulang kata sandi sudah dikirimkan. Periksa kotak masuk dan folder spam; tautannya berlaku satu jam.',
+  };
+}
+
+/**
+ * The link in the email lands on `/auth/callback`, which exchanges its code for
+ * a session and forwards here. Absolute, because it is read by a mail client on
+ * another machine.
+ */
+function passwordResetRedirectUrl(): string {
+  const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ?? 'http://localhost:3000';
+  return `${base}/auth/callback?next=/reset-password`;
+}
+
+/**
+ * Sets the new password.
+ *
+ * Requires the recovery session the callback established — without it Supabase
+ * has no one to change the password of, and the refusal says to start again
+ * rather than leaving a form that silently does nothing.
+ */
+export async function resetPasswordAction(
+  _prev: AuthFormState,
+  formData: FormData,
+): Promise<AuthFormState> {
+  const parsed = resetPasswordSchema.safeParse({
+    password: formData.get('password'),
+    confirmPassword: formData.get('confirmPassword'),
+  });
+
+  if (!parsed.success) {
+    return { fieldErrors: fieldErrorsOf(parsed.error.issues) };
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return {
+      error: 'Tautan pengaturan ulang sudah tidak berlaku.',
+      hint: 'Mintalah tautan baru dari halaman "Lupa kata sandi".',
+    };
+  }
+
+  const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
+
+  if (error) {
+    return {
+      error: 'Kata sandi gagal diperbarui.',
+      hint: error.message,
+    };
+  }
+
+  /*
+   * Signed out on purpose. The recovery session was minted to prove ownership
+   * of the mailbox, not to start a working day, and ending it here means the
+   * new password is used at least once — which is how someone finds out
+   * immediately if it is not the one they meant to set.
+   */
+  await supabase.auth.signOut();
+  redirect('/login?reset=1');
 }

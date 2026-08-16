@@ -19,8 +19,8 @@ import { importUtba, type ImportReport } from '@/services/import-utba';
  * inside a transaction and rolls it back, so the counts it reports are what
  * actually happened rather than a prediction.
  *
- *   npm run db:import:utba -- "<file.xlsx>" --email=admin@demo.test
- *   npm run db:import:utba -- "<file.xlsx>" --email=admin@demo.test --apply
+ *   npm run db:import:utba -- "<file.xlsx>" --email=ramadhandimasnur@gmail.com
+ *   npm run db:import:utba -- "<file.xlsx>" --email=ramadhandimasnur@gmail.com --apply
  */
 
 function flag(name: string): string | undefined {

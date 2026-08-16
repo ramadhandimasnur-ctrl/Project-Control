@@ -40,7 +40,10 @@ const config = [
   },
   {
     // Scripts run outside Next.js (seed, migrate) legitimately log to stdout.
-    files: ['src/db/**/*.ts', 'scripts/**/*.ts'],
+    // `.mjs` included: an operator script is no less a script for being plain
+    // JavaScript, and a warning nobody can act on trains people to ignore the
+    // list it appears in.
+    files: ['src/db/**/*.ts', 'scripts/**/*.{ts,mjs}'],
     rules: { 'no-console': 'off' },
   },
 ];

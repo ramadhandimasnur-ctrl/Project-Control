@@ -197,8 +197,16 @@ export type DemoUser = {
 
 export const DEMO_USERS: DemoUser[] = [
   {
+    /*
+     * A real mailbox, unlike the other two.
+     *
+     * The master account is the one that has to receive things — approval
+     * notices, a reset link — so a `.test` address that no server will ever
+     * deliver to makes exactly the account that needs mail the one that cannot
+     * get any. `SEED_ADMIN_EMAIL` still overrides it per deployment.
+     */
     envEmailKey: 'SEED_ADMIN_EMAIL',
-    fallbackEmail: 'admin@demo.test',
+    fallbackEmail: 'ramadhandimasnur@gmail.com',
     fullName: 'Dimas Nur Ramadhan',
     globalRole: 'ADMIN',
     projectRole: 'PROJECT_MANAGER',

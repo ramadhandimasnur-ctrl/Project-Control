@@ -3,7 +3,25 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { publicEnv } from '@/lib/env';
 
-const PUBLIC_PATHS = ['/login', '/register', '/auth', '/_next', '/favicon.ico'];
+/*
+ * `/reset-password` is public so that it can explain itself.
+ *
+ * Someone arriving with a dead link has no session, and bouncing them to the
+ * sign-in form answers a question they did not ask: they clicked "atur ulang
+ * kata sandi" and landed somewhere that says nothing about why. The page
+ * checks the session itself and says the link expired. Nothing is weakened by
+ * letting them read that — the action re-checks the session before it changes
+ * any password, and a page with no session can only offer a new link.
+ */
+const PUBLIC_PATHS = [
+  '/login',
+  '/register',
+  '/forgot-password',
+  '/reset-password',
+  '/auth',
+  '/_next',
+  '/favicon.ico',
+];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
@@ -56,7 +74,12 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     return NextResponse.redirect(url);
   }
 
-  if (user && (pathname === '/login' || pathname === '/register')) {
+  /*
+   * `/reset-password` is deliberately absent from this list. Reaching it means
+   * holding a recovery session, which makes the visitor "signed in" — bouncing
+   * them to the projects list would make the link in the email do nothing.
+   */
+  if (user && (pathname === '/login' || pathname === '/register' || pathname === '/forgot-password')) {
     const url = request.nextUrl.clone();
     url.pathname = '/projects';
     url.search = '';
