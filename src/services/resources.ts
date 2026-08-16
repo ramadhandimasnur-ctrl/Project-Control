@@ -310,8 +310,16 @@ export async function countResourceUsage(resourceId: string): Promise<ResourceUs
     purchase_items: number;
   }>(sql`
     SELECT
-      (SELECT count(*)::int FROM ${workItemResources}     WHERE resource_id = ${resourceId}) AS work_items,
-      (SELECT count(*)::int FROM ${ahspTemplateResources} WHERE resource_id = ${resourceId}) AS ahsp_templates,
+      /*
+       * Distinct owners, not rows. Since the analyses split, one resource used
+       * by both the RAB and the RAP of a single work item occupies two rows —
+       * and "dipakai pada 2 pekerjaan" would be a plain untruth about a
+       * catalogue entry someone is deciding whether to delete.
+       */
+      (SELECT count(DISTINCT work_item_id)::int FROM ${workItemResources}
+         WHERE resource_id = ${resourceId}) AS work_items,
+      (SELECT count(DISTINCT template_id)::int FROM ${ahspTemplateResources}
+         WHERE resource_id = ${resourceId}) AS ahsp_templates,
       (SELECT count(*)::int FROM ${materialTransactions}  WHERE resource_id = ${resourceId}) AS material_transactions,
       (SELECT count(*)::int FROM ${purchaseItems}         WHERE resource_id = ${resourceId}) AS purchase_items
   `);

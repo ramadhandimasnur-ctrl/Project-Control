@@ -363,9 +363,13 @@ describe.skipIf(!ready)('master data — jalur tulis', () => {
             INSERT INTO work_items (id, project_id, code, name, unit_id, volume)
             VALUES (${workItemId}, ${projectId}, 'A.01', 'Pekerjaan Uji', ${unitId}, 10)
           `;
+          // One row per analysis, the shape the split gave the table.
           await tx`
-            INSERT INTO work_item_resources (work_item_id, resource_id, role, coef_rab, coef_rap)
-            VALUES (${workItemId}, ${resourceId}, 'MATERIAL', 8, 8)
+            INSERT INTO work_item_resources
+              (work_item_id, resource_id, role, estimate_type, coef)
+            VALUES
+              (${workItemId}, ${resourceId}, 'MATERIAL', 'RAB', 8),
+              (${workItemId}, ${resourceId}, 'MATERIAL', 'RAP', 8)
           `;
         });
       });
