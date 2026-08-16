@@ -197,6 +197,30 @@
     padding: 0 !important;
   }
 
+  /*
+   * A table that scrolls sideways on screen must not be clipped on paper.
+   *
+   * There is nowhere to scroll on a sheet, so anything past the fold simply
+   * disappears — and the columns that go first are the ones on the right:
+   * cumulative progress and the deviation against plan, which is most of what
+   * the reader opened the report for.
+   */
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  /* Recap tables carry a dozen columns; paper is 210mm wide. */
+  table {
+    font-size: 9pt;
+    table-layout: auto;
+  }
+
+  th,
+  td {
+    padding-block: 4px !important;
+    padding-inline: 6px !important;
+  }
+
   * {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;

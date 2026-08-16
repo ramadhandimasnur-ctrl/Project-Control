@@ -52,7 +52,24 @@ export type ReportPayload = {
     completedBefore: string;
     pctThisPeriod: string;
     status: string | null;
+    /**
+     * The progress columns, weighted so they can be added down the page.
+     *
+     * Optional because snapshots published before these columns existed do not
+     * carry them, and a frozen report is never rewritten to look newer than it
+     * is. The page renders them as blank rather than as zero — nothing was
+     * measured, which is not the same as nothing having been done.
+     */
+    weighted?: {
+      previous: string;
+      current: string;
+      cumulative: string;
+      planned: string;
+      deviation: string;
+    };
   }[];
+  /** Wording for the progress columns, from the project's period calendar. */
+  periodType?: 'DAY' | 'WEEK' | 'MONTH';
   /**
    * Planned against realised, period by period — weekly and monthly only.
    *
@@ -159,8 +176,19 @@ export async function buildReportPayload(
       spi: atPeriod?.spi === null || atPeriod === null ? null : atPeriod.spi.toString(),
       fromBaseline: comparison.curveFromBaseline,
     },
+    periodType: board.periodType,
+    /*
+     * A daily sheet lists what was worked on that day. A weekly or monthly
+     * report is a recap of the whole scope: every weighted item appears,
+     * whether or not it moved, so the weight column sums to 100% and the
+     * cumulative column reconciles with the S-curve above it.
+     */
     items: board.rows
-      .filter((row) => row.status !== null)
+      .filter((row) =>
+        reportType === 'DAILY'
+          ? row.status !== null
+          : row.includeInProgressWeight || row.status !== null,
+      )
       .map((row) => ({
         code: row.code,
         name: row.name,
@@ -169,6 +197,7 @@ export async function buildReportPayload(
         completedBefore: row.completedBefore,
         pctThisPeriod: row.pctThisPeriod,
         status: row.status,
+        weighted: row.weighted,
       })),
     curve,
     issues: periodIssues.map((issue) => ({

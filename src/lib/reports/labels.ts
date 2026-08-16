@@ -29,3 +29,20 @@ export const ISSUE_STATUS_LABELS: Record<IssueStatus, string> = {
   IN_PROGRESS: 'Ditangani',
   CLOSED: 'Selesai',
 };
+
+/**
+ * Column headings for the progress columns, worded for the project's own
+ * period.
+ *
+ * A monthly project reading "Minggu lalu" invites the reader to halve the
+ * figure in their head, so the wording follows the calendar the project
+ * actually runs on.
+ */
+export const PROGRESS_COLUMN_LABELS: Record<
+  'DAY' | 'WEEK' | 'MONTH',
+  { previous: string; current: string; cumulative: string }
+> = {
+  DAY: { previous: 'Hari lalu', current: 'Hari ini', cumulative: 's.d. hari ini' },
+  WEEK: { previous: 'Minggu lalu', current: 'Minggu ini', cumulative: 's.d. minggu ini' },
+  MONTH: { previous: 'Bulan lalu', current: 'Bulan ini', cumulative: 's.d. bulan ini' },
+};

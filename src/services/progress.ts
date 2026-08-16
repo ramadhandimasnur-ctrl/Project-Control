@@ -11,7 +11,7 @@ import {
   workItemChecklists,
   workItems,
 } from '@/db/schema';
-import { toPercentString, toQuantityString, toDecimal } from '@/lib/calc/decimal';
+import { type Decimal, toPercentString, toQuantityString, toDecimal } from '@/lib/calc/decimal';
 import {
   type ComparisonPoint,
   type ProgressMethod,
@@ -22,7 +22,10 @@ import {
   deriveProgress,
   deviationStatus,
   remainingFor,
+  weightedProgress,
 } from '@/lib/calc/progress';
+import { type PeriodType, periodOn } from '@/lib/calc/schedule';
+import { todayIso } from '@/lib/date';
 import { conflict, forbidden, notFound, validation } from '@/lib/errors';
 import { canApproveProgress } from '@/lib/auth/roles';
 
@@ -59,6 +62,31 @@ export type ProgressBoardRow = {
   completedBefore: string;
   /** How much of the item is still available to report. */
   remaining: string;
+  /** The plan's share of this item due by the end of the selected period. */
+  plannedCumulative: string;
+  /**
+   * Approved share from periods before this one.
+   *
+   * Distinct from `completedBefore`, which counts every other period including
+   * later ones — right for the ceiling check, wrong for a column headed
+   * "minggu lalu".
+   */
+  earnedBefore: string;
+  /**
+   * The same four figures expressed as a share of the whole project.
+   *
+   * These are the columns a weekly report is read down — last period, this
+   * period, to date, and the gap against plan — and being weighted is what
+   * lets the reader add them up. Approved progress only, so the total at the
+   * foot of the table matches the realised S-curve.
+   */
+  weighted: {
+    previous: string;
+    current: string;
+    cumulative: string;
+    planned: string;
+    deviation: string;
+  };
   checklistVerdict: ChecklistResult | null;
   /**
    * The three inspection answers as saved.
@@ -72,6 +100,10 @@ export type ProgressBoardRow = {
 export type ProgressBoard = {
   periods: { id: string; seq: number; label: string; startDate: string; endDate: string }[];
   selectedPeriodId: string | null;
+  /** Drives the column wording — "Minggu lalu" on a weekly project. */
+  periodType: PeriodType;
+  /** True when the plan the columns compare against is a frozen baseline. */
+  planFromBaseline: boolean;
   rows: ProgressBoardRow[];
   requireChecklist: boolean;
   canApprove: boolean;
@@ -106,7 +138,15 @@ export async function getProgressBoard(
     .where(eq(schedulePeriods.projectId, projectId))
     .orderBy(asc(schedulePeriods.seq));
 
-  const selected = periodId ?? periods[0]?.id ?? null;
+  /*
+   * Without an explicit choice the board opens on today's period.
+   *
+   * It used to open on period one, which was merely unhelpful while the
+   * columns only showed "this period" — but a column headed "up to this
+   * period" reading 1,6% under a project banner reading 27,4% looks like a
+   * broken number rather than a different question.
+   */
+  const selected = periodId ?? periodOn(periods, todayIso())?.id ?? periods[0]?.id ?? null;
 
   const overview = await getScheduleOverview(userId, projectId);
   const weightOf = new Map(overview.rows.map((row) => [row.workItemId, row.weight]));
@@ -168,9 +208,72 @@ export async function getProgressBoard(
   );
   const completedBefore = new Map(completions.map((c) => [c.workItemId, c.completion]));
 
+  const selectedSeq = periods.find((period) => period.id === selected)?.seq ?? null;
+  const seqOf = new Map(periods.map((period) => [period.id, period.seq]));
+
+  /*
+   * What the plan expected of each item by the end of the selected period.
+   *
+   * Summed across every period up to and including this one, so the figure is
+   * comparable with realised progress to date rather than with this period's
+   * slice alone.
+   */
+  const plannedCumulative = new Map<string, Decimal>();
+
+  /*
+   * Approved progress from periods strictly before this one — "minggu lalu".
+   *
+   * Deliberately not `completedBefore`, which counts every other period
+   * including later ones. That is the right basis for the 100% ceiling and for
+   * milestone increments, but on a report column headed "last week" it would
+   * quietly fold in work approved for next week after a late correction.
+   */
+  const earnedBefore = new Map<string, Decimal>();
+
+  if (selectedSeq !== null) {
+    for (const cell of overview.effectivePlan) {
+      const seq = seqOf.get(cell.periodId);
+      if (seq === undefined || seq > selectedSeq) continue;
+      plannedCumulative.set(
+        cell.workItemId,
+        (plannedCumulative.get(cell.workItemId) ?? toDecimal(0)).plus(toDecimal(cell.plannedPct)),
+      );
+    }
+
+    for (const entry of approved) {
+      const seq = seqOf.get(entry.periodId);
+      if (seq === undefined || seq >= selectedSeq) continue;
+      earnedBefore.set(
+        entry.workItemId,
+        (earnedBefore.get(entry.workItemId) ?? toDecimal(0)).plus(toDecimal(entry.pctThisPeriod)),
+      );
+    }
+  }
+
   const rows: ProgressBoardRow[] = items.map((item) => {
     const entry = forPeriod.get(item.id);
     const before = completedBefore.get(item.id) ?? toDecimal(0);
+    const plan = plannedCumulative.get(item.id) ?? toDecimal(0);
+
+    /*
+     * An item excluded from the progress weight carries no share of the
+     * project, so its weighted columns are zero rather than a number that
+     * would not belong in the total at the foot of the report.
+     */
+    const share = item.includeInProgressWeight ? (weightOf.get(item.id) ?? '0') : '0';
+
+    /*
+     * Only approved work is weighted. A draft is a claim, and a claim that
+     * counted here would put the column total above the realised S-curve the
+     * same report prints two sections higher.
+     */
+    const earnedNow = entry?.status === COUNTS_TOWARD_ACTUAL ? entry.pctThisPeriod : '0';
+    const weighted = weightedProgress(
+      share,
+      earnedBefore.get(item.id) ?? toDecimal(0),
+      earnedNow,
+      plan,
+    );
 
     return {
       workItemId: item.id,
@@ -197,6 +300,15 @@ export async function getProgressBoard(
         item.id,
         selected,
       ).toString(),
+      plannedCumulative: plan.toString(),
+      earnedBefore: (earnedBefore.get(item.id) ?? toDecimal(0)).toString(),
+      weighted: {
+        previous: weighted.previous.toString(),
+        current: weighted.current.toString(),
+        cumulative: weighted.cumulative.toString(),
+        planned: weighted.planned.toString(),
+        deviation: weighted.deviation.toString(),
+      },
       checklistVerdict: checklistOf.get(item.id)?.verdict ?? null,
       checklist: (() => {
         const saved = checklistOf.get(item.id);
@@ -214,6 +326,8 @@ export async function getProgressBoard(
   return {
     periods,
     selectedPeriodId: selected,
+    periodType: overview.periodType,
+    planFromBaseline: overview.curveFromBaseline,
     rows,
     requireChecklist: project.requireChecklist,
     canApprove: canApproveProgress(access.role),

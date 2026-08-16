@@ -153,6 +153,8 @@ export function financeSheets(input: FinanceExportInput): SheetSpec[] {
 
 export type ProgressExportInput = {
   preamble: string[];
+  /** Headings for the three progress columns, worded for the period calendar. */
+  columns: { previous: string; current: string; cumulative: string };
   curve: {
     label: string;
     plannedPct: string;
@@ -165,6 +167,13 @@ export type ProgressExportInput = {
     name: string;
     unitCode: string;
     weight: string;
+    /** Weighted against the whole project, so the columns sum. */
+    previous: string;
+    current: string;
+    cumulative: string;
+    planned: string;
+    deviation: string;
+    /** The item's own completion, for readers checking a single line. */
     completedBefore: string;
     pctThisPeriod: string;
     status: string;
@@ -188,11 +197,27 @@ export function progressSheets(input: ProgressExportInput): SheetSpec[] {
     {
       name: 'Rekap Pekerjaan',
       preamble: input.preamble,
+      /*
+       * The bobot columns come first because they are the ones that add up:
+       * the reader sums them down the page and lands on the project's
+       * progress. The item's own percentages follow as a check on any single
+       * line, where summing would be meaningless.
+       */
       columns: [
         { header: 'Kode', key: 'code', width: 14, format: 'text' },
         { header: 'Uraian', key: 'name', width: 42, format: 'text' },
         { header: 'Sat', key: 'unitCode', width: 8, format: 'text' },
         { header: 'Bobot', key: 'weight', width: 12, format: 'percent' },
+        { header: `Bobot ${input.columns.previous}`, key: 'previous', width: 18, format: 'percent' },
+        { header: `Bobot ${input.columns.current}`, key: 'current', width: 18, format: 'percent' },
+        {
+          header: `Bobot ${input.columns.cumulative}`,
+          key: 'cumulative',
+          width: 20,
+          format: 'percent',
+        },
+        { header: 'Bobot rencana', key: 'planned', width: 18, format: 'percent' },
+        { header: 'Deviasi', key: 'deviation', width: 14, format: 'percent' },
         { header: 'Selesai sebelumnya', key: 'completedBefore', width: 20, format: 'percent' },
         { header: 'Periode ini', key: 'pctThisPeriod', width: 16, format: 'percent' },
         { header: 'Status', key: 'status', width: 16, format: 'text' },

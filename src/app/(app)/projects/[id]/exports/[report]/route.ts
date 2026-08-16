@@ -13,6 +13,7 @@ import {
 } from '@/lib/export/sheets';
 import { buildWorkbook } from '@/lib/export/workbook';
 import { formatDay } from '@/lib/format';
+import { PROGRESS_COLUMN_LABELS } from '@/lib/reports/labels';
 import { getProjectEstimate } from '@/services/ahsp';
 import { getCashflow, getFinancialSummary } from '@/services/cash';
 import { getProgressBoard, getProgressComparison } from '@/services/progress';
@@ -41,10 +42,11 @@ function isReport(value: string): value is Report {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string; report: string }> },
 ) {
   const { id: projectId, report } = await params;
+  const periodId = new URL(request.url).searchParams.get('period');
 
   if (!isReport(report)) {
     return NextResponse.json({ error: 'Jenis laporan tidak dikenal.' }, { status: 404 });
@@ -69,7 +71,7 @@ export async function GET(
       `Diekspor: ${formatDay(todayIso())} oleh ${user.fullName}`,
     ].filter((line) => line !== '');
 
-    const sheets = await sheetsFor(report, user.id, projectId, preamble);
+    const sheets = await sheetsFor(report, user.id, projectId, preamble, periodId);
     const buffer = await buildWorkbook(sheets);
     const fileName = exportFileName(project.code, report, todayIso());
 
@@ -93,6 +95,7 @@ async function sheetsFor(
   userId: string,
   projectId: string,
   preamble: string[],
+  periodId: string | null,
 ): Promise<SheetSpec[]> {
   if (report === 'cashflow') {
     const cashflow = await getCashflow(userId, projectId);
@@ -126,17 +129,33 @@ async function sheetsFor(
     });
   }
 
-  const [schedule, comparison, board] = await Promise.all([
+  const [schedule, comparison] = await Promise.all([
     getScheduleOverview(userId, projectId),
     getProgressComparison(userId, projectId),
-    getProgressBoard(userId, projectId),
   ]);
 
-  const lastReported = comparison.points.filter((point) => point.spi !== null).at(-1)?.seq ?? null;
+  const lastPoint = comparison.points.filter((point) => point.spi !== null).at(-1) ?? null;
+  const lastReported = lastPoint?.seq ?? null;
   const actualBy = new Map(comparison.points.map((point) => [point.periodId, point]));
 
+  /*
+   * Which period the recap columns describe.
+   *
+   * Without an explicit choice this follows the last reported period rather
+   * than the first on the calendar: the columns say "up to this period", and
+   * defaulting to period one would print week 1 for a project in week twelve.
+   */
+  const known = new Set(schedule.periods.map((period) => period.id));
+  const targetId =
+    periodId !== null && known.has(periodId) ? periodId : (lastPoint?.periodId ?? undefined);
+
+  const board = await getProgressBoard(userId, projectId, targetId);
+  const targetPeriod = schedule.periods.find((period) => period.id === board.selectedPeriodId);
+  const columns = PROGRESS_COLUMN_LABELS[board.periodType];
+
   return progressSheets({
-    preamble,
+    preamble: targetPeriod ? [...preamble, `Rekap sampai periode: ${targetPeriod.label}`] : preamble,
+    columns,
     curve: schedule.curve.map((point) => {
       const paired = actualBy.get(point.periodId);
       // Beyond the last report the cells stay blank: nothing has been reported
@@ -156,7 +175,12 @@ async function sheetsFor(
       name: row.name,
       unitCode: row.unitCode,
       weight: row.weight,
-      completedBefore: row.completedBefore,
+      previous: row.weighted.previous,
+      current: row.weighted.current,
+      cumulative: row.weighted.cumulative,
+      planned: row.weighted.planned,
+      deviation: row.weighted.deviation,
+      completedBefore: row.earnedBefore,
       pctThisPeriod: row.pctThisPeriod,
       status: row.status ?? '',
     })),

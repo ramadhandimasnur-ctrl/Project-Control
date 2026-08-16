@@ -12,6 +12,7 @@ import {
   isPartialPeriod,
   normalizeToOne,
   overlapDays,
+  periodOn,
   plannedSCurve,
 } from '../schedule';
 
@@ -218,6 +219,40 @@ describe('normalizeToOne', () => {
 
   it('handles an empty plan', () => {
     expect(normalizeToOne([])).toEqual([]);
+  });
+});
+
+describe('periodOn', () => {
+  const periods = [
+    { seq: 1, startDate: '2026-01-01', endDate: '2026-01-31' },
+    { seq: 2, startDate: '2026-02-01', endDate: '2026-02-28' },
+    { seq: 3, startDate: '2026-03-01', endDate: '2026-03-31' },
+  ];
+
+  it('finds the period a date falls in', () => {
+    expect(periodOn(periods, '2026-02-14')?.seq).toBe(2);
+  });
+
+  it('includes both boundary days', () => {
+    expect(periodOn(periods, '2026-02-01')?.seq).toBe(2);
+    expect(periodOn(periods, '2026-02-28')?.seq).toBe(2);
+  });
+
+  // Clamped rather than empty: a screen with no period to show is a dead end.
+  it('clamps to the first period before the project starts', () => {
+    expect(periodOn(periods, '2025-12-15')?.seq).toBe(1);
+  });
+
+  it('clamps to the last period after the project ends', () => {
+    expect(periodOn(periods, '2026-09-01')?.seq).toBe(3);
+  });
+
+  it('ignores the order they arrive in', () => {
+    expect(periodOn([periods[2]!, periods[0]!, periods[1]!], '2026-01-05')?.seq).toBe(1);
+  });
+
+  it('has nothing to return when there are no periods', () => {
+    expect(periodOn([], '2026-01-05')).toBeNull();
   });
 });
 

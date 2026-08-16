@@ -134,6 +134,7 @@ describe('financeSheets', () => {
 describe('progressSheets', () => {
   const sheets = progressSheets({
     preamble: ['Proyek A'],
+    columns: { previous: 'Minggu lalu', current: 'Minggu ini', cumulative: 's.d. minggu ini' },
     curve: [
       {
         label: 'M1',
@@ -156,6 +157,11 @@ describe('progressSheets', () => {
         name: 'Galian',
         unitCode: 'm3',
         weight: '0.25',
+        previous: '0.125',
+        current: '0.05',
+        cumulative: '0.175',
+        planned: '0.2',
+        deviation: '-0.025',
         completedBefore: '0.5',
         pctThisPeriod: '0.2',
         status: 'Disetujui',

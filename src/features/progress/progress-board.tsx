@@ -32,12 +32,15 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
 import { selectClassName } from '@/features/master-data/form-fields';
+import { ZERO, toDecimal } from '@/lib/calc/decimal';
 import { EMPTY_VALUE, formatPercent } from '@/lib/format';
+import { PROGRESS_COLUMN_LABELS } from '@/lib/reports/labels';
 import { cn } from '@/lib/utils';
 import { type ProgressBoard, type ProgressBoardRow } from '@/services/progress';
 
@@ -51,6 +54,28 @@ import {
 import { ChecklistDialog } from './checklist-dialog';
 import { MilestoneDialog } from './milestone-dialog';
 import { ProgressDialog } from './progress-dialog';
+
+/**
+ * Column totals for the footer row.
+ *
+ * Only weighted items are counted: an item excluded from the progress weight
+ * carries no share of the project, and adding its own percentage in here would
+ * push the total past what has actually been earned.
+ */
+function sumWeighted(rows: readonly ProgressBoardRow[]) {
+  const weighted = rows.filter((row) => row.includeInProgressWeight);
+  const add = (pick: (row: ProgressBoardRow) => string) =>
+    weighted.reduce((acc, row) => acc.plus(toDecimal(pick(row))), ZERO);
+
+  return {
+    weight: add((row) => row.weight),
+    previous: add((row) => row.weighted.previous),
+    current: add((row) => row.weighted.current),
+    cumulative: add((row) => row.weighted.cumulative),
+    planned: add((row) => row.weighted.planned),
+    deviation: add((row) => row.weighted.deviation),
+  };
+}
 
 const STATUS_LABELS = {
   DRAFT: 'Draf',
@@ -103,6 +128,8 @@ export function ProgressBoardView({
   };
 
   const pendingHere = board.rows.filter((row) => row.status === 'SUBMITTED');
+  const columns = PROGRESS_COLUMN_LABELS[board.periodType];
+  const totals = sumWeighted(board.rows);
 
   return (
     <div className="space-y-4">
@@ -161,8 +188,11 @@ export function ProgressBoardView({
               <TableHead className="w-20">Kode</TableHead>
               <TableHead>Uraian</TableHead>
               <TableHead className="w-24 text-right">Bobot</TableHead>
-              <TableHead className="w-28 text-right">Selesai</TableHead>
-              <TableHead className="w-28 text-right">Periode ini</TableHead>
+              <TableHead className="w-28 text-right">{columns.previous}</TableHead>
+              <TableHead className="w-28 text-right">{columns.current}</TableHead>
+              <TableHead className="w-32 text-right">{columns.cumulative}</TableHead>
+              <TableHead className="w-28 text-right">Rencana</TableHead>
+              <TableHead className="w-28 text-right">Deviasi</TableHead>
               <TableHead className="w-28">Status</TableHead>
               {board.requireChecklist ? <TableHead className="w-24">Mutu</TableHead> : null}
               <TableHead className="w-64" />
@@ -172,6 +202,15 @@ export function ProgressBoardView({
             {board.rows.map((row) => {
               const busy = pending && busyId === row.workItemId;
               const done = row.remaining === '0';
+
+              /*
+               * An item outside the progress weight has no share of the
+               * project, so its weighted cells stay blank rather than printing
+               * a row of zeros that invites the reader to wonder what went
+               * wrong with it.
+               */
+              const bobot = (value: string) =>
+                row.includeInProgressWeight ? formatPercent(value, 2) : EMPTY_VALUE;
 
               return (
                 <TableRow key={row.workItemId}>
@@ -187,16 +226,55 @@ export function ProgressBoardView({
                   <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
                     {row.includeInProgressWeight ? formatPercent(row.weight, 1) : EMPTY_VALUE}
                   </TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">
-                    {formatPercent(row.completedBefore, 1)}
+
+                  {/*
+                    Weighted figures — a share of the whole project, so the
+                    column adds up to the progress at the foot of the table.
+                    The item's own percentage rides underneath, because that is
+                    the number the field user typed and recognises.
+                  */}
+                  <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
+                    {bobot(row.weighted.previous)}
+                    <span className="block text-[10px]">
+                      {formatPercent(row.earnedBefore, 1)} pekerjaan
+                    </span>
                   </TableCell>
+
+                  {/*
+                    An unapproved entry shows a dash rather than a zero: the
+                    work may well be done, but nothing has been earned yet, and
+                    the status badge alongside says why.
+                  */}
                   <TableCell
                     className={cn(
                       'text-right font-mono tabular-nums',
                       row.status === 'APPROVED' && 'font-medium',
                     )}
                   >
-                    {row.status === null ? EMPTY_VALUE : formatPercent(row.pctThisPeriod, 1)}
+                    {row.status === 'APPROVED' ? bobot(row.weighted.current) : EMPTY_VALUE}
+                    {row.status === null ? null : (
+                      <span className="block text-[10px] text-muted-foreground">
+                        {formatPercent(row.pctThisPeriod, 1)} pekerjaan
+                        {row.status === 'APPROVED' ? '' : ' diklaim'}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right font-mono font-medium tabular-nums">
+                    {bobot(row.weighted.cumulative)}
+                  </TableCell>
+                  <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
+                    {bobot(row.weighted.planned)}
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      'text-right font-mono tabular-nums',
+                      row.includeInProgressWeight &&
+                        toDecimal(row.weighted.deviation).isNegative()
+                        ? 'text-destructive'
+                        : 'text-muted-foreground',
+                    )}
+                  >
+                    {bobot(row.weighted.deviation)}
                   </TableCell>
                   <TableCell>
                     {row.status === null ? (
@@ -416,8 +494,52 @@ export function ProgressBoardView({
               );
             })}
           </TableBody>
+
+          {/*
+            The reason the columns are weighted: they add up. This row is the
+            project's progress, assembled from the same cells the reader can
+            check line by line.
+          */}
+          <TableFooter>
+            <TableRow>
+              <TableCell colSpan={2}>Jumlah bobot proyek</TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {formatPercent(totals.weight, 1)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {formatPercent(totals.previous, 2)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {formatPercent(totals.current, 2)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {formatPercent(totals.cumulative, 2)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {formatPercent(totals.planned, 2)}
+              </TableCell>
+              <TableCell
+                className={cn(
+                  'text-right font-mono tabular-nums',
+                  totals.deviation.isNegative() ? 'text-destructive' : undefined,
+                )}
+              >
+                {formatPercent(totals.deviation, 2)}
+              </TableCell>
+              <TableCell colSpan={board.requireChecklist ? 3 : 2} />
+            </TableRow>
+          </TableFooter>
         </Table>
       </div>
+
+      <p className="text-xs text-muted-foreground">
+        Kolom bobot dihitung terhadap seluruh proyek sehingga dapat dijumlahkan ke bawah, dan hanya
+        menghitung progres yang sudah disetujui. Angka kecil di bawahnya adalah porsi pekerjaan itu
+        sendiri.{' '}
+        {board.planFromBaseline
+          ? 'Rencana diambil dari baseline aktif.'
+          : 'Proyek ini belum punya baseline aktif, jadi rencana diambil dari distribusi draf yang masih dapat berubah.'}
+      </p>
 
       {recording && period ? (
         <ProgressDialog

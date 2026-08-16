@@ -9,6 +9,7 @@ import {
   progressFromMilestones,
   remainingFor,
   schedulePerformanceIndex,
+  weightedProgress,
 } from '../progress';
 
 const THRESHOLDS = { warning: '-0.005', delayed: '-0.05' };
@@ -150,6 +151,50 @@ describe('remainingFor', () => {
       { workItemId: 'w1', periodId: 'p2', pctThisPeriod: '0.5' },
     ];
     expect(remainingFor(over, 'w1', null).toString()).toBe('0');
+  });
+});
+
+describe('weightedProgress', () => {
+  it('scales each column by the item weight', () => {
+    const result = weightedProgress('0.25', '0.4', '0.2', '0.7');
+    expect(result.previous.toString()).toBe('0.1');
+    expect(result.current.toString()).toBe('0.05');
+    expect(result.cumulative.toString()).toBe('0.15');
+    expect(result.planned.toString()).toBe('0.175');
+  });
+
+  it('reports the gap against plan, negative when behind', () => {
+    const behind = weightedProgress('0.25', '0.4', '0.2', '0.7');
+    expect(behind.deviation.toString()).toBe('-0.025');
+
+    const ahead = weightedProgress('0.25', '0.4', '0.4', '0.7');
+    expect(ahead.deviation.toString()).toBe('0.025');
+  });
+
+  /*
+   * The whole reason these are weighted: a reader adds the column down the
+   * page and lands on the project's progress. Item percentages cannot do that.
+   */
+  it('sums across items to the project progress', () => {
+    const items = [
+      weightedProgress('0.5', '0.4', '0.2', '0.6'),
+      weightedProgress('0.3', '1', '0', '1'),
+      weightedProgress('0.2', '0', '0.5', '0.4'),
+    ];
+
+    const total = items.reduce((acc, item) => acc.plus(item.cumulative), items[0]!.cumulative.times(0));
+    expect(total.toString()).toBe('0.7');
+  });
+
+  it('never lets one item contribute more than its weight', () => {
+    const result = weightedProgress('0.25', '0.8', '0.5', '1');
+    expect(result.cumulative.toString()).toBe('0.25');
+  });
+
+  it('contributes nothing when the item carries no weight', () => {
+    const result = weightedProgress('0', '1', '1', '1');
+    expect(result.cumulative.toString()).toBe('0');
+    expect(result.deviation.toString()).toBe('0');
   });
 });
 

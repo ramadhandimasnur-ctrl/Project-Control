@@ -139,6 +139,52 @@ export function remainingFor(
   return left.isNegative() ? ZERO : left;
 }
 
+// --- weighted columns -------------------------------------------------------
+
+export type WeightedProgress = {
+  /** Contribution already earned in earlier periods. */
+  previous: Decimal;
+  /** Contribution earned in this period alone. */
+  current: Decimal;
+  /** Everything earned through the end of this period. */
+  cumulative: Decimal;
+  /** What the plan expected to be earned by now. */
+  planned: Decimal;
+  /** Realised minus planned. Negative means behind. */
+  deviation: Decimal;
+};
+
+/**
+ * One work item's columns on a weekly report: last period, this period, to
+ * date, and the gap against plan.
+ *
+ * Every figure is weighted — a share of the whole project, not of the item.
+ * That is what makes the column addable: the sum down the page is the project's
+ * progress, which is the number the report exists to justify. An item's own
+ * percentage cannot be summed with its neighbours and means nothing on its own
+ * line of a billing document.
+ */
+export function weightedProgress(
+  weight: Numeric,
+  completedBefore: Numeric,
+  pctThisPeriod: Numeric,
+  plannedCumulative: Numeric,
+): WeightedProgress {
+  const share = toDecimal(weight);
+
+  const previous = share.times(clamp(toDecimal(completedBefore), 0, 1));
+  const current = share.times(clamp(toDecimal(pctThisPeriod), 0, 1));
+
+  // Capped at the item's own weight: an item cannot contribute more to the
+  // project than it is worth, however the two halves were recorded.
+  const rawCumulative = previous.plus(current);
+  const cumulative = rawCumulative.greaterThan(share) ? share : rawCumulative;
+
+  const planned = share.times(clamp(toDecimal(plannedCumulative), 0, 1));
+
+  return { previous, current, cumulative, planned, deviation: cumulative.minus(planned) };
+}
+
 // --- actual S-curve ---------------------------------------------------------
 
 export type CurvePoint = {

@@ -153,6 +153,35 @@ export function isPartialPeriod(period: GeneratedPeriod, periodType: PeriodType)
   );
 }
 
+/**
+ * Where the project stands on a given date.
+ *
+ * Returns the period containing the date; before the project starts that is
+ * the first period, after it ends the last. The clamping is deliberate — a
+ * screen that opens on "no period" is a dead end, and one that always opens on
+ * period 1 shows a project in its twelfth week the figures from its first.
+ */
+export function periodOn<T extends { startDate: string; endDate: string; seq: number }>(
+  periods: readonly T[],
+  isoDate: string,
+): T | null {
+  if (periods.length === 0) return null;
+
+  const ordered = [...periods].sort((a, b) => a.seq - b.seq);
+  const containing = ordered.find(
+    (period) =>
+      differenceInCalendarDays(parseISO(isoDate), parseISO(period.startDate)) >= 0 &&
+      differenceInCalendarDays(parseISO(period.endDate), parseISO(isoDate)) >= 0,
+  );
+
+  if (containing) return containing;
+
+  const first = ordered[0]!;
+  return differenceInCalendarDays(parseISO(isoDate), parseISO(first.startDate)) < 0
+    ? first
+    : ordered[ordered.length - 1]!;
+}
+
 // --- distribution -----------------------------------------------------------
 
 export type PeriodRange = { id: string; startDate: string; endDate: string };

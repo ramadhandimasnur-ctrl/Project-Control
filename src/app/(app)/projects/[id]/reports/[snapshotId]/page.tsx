@@ -10,12 +10,14 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
 import { PaperSettings } from '@/features/progress/paper-settings';
 import { SCurveChart } from '@/features/schedule/scurve-chart';
+import { ZERO, toDecimal } from '@/lib/calc/decimal';
 import { PROGRESS_STATUS_LABELS } from '@/lib/calc/progress';
 import { isAppError } from '@/lib/errors';
 import {
@@ -28,9 +30,10 @@ import {
 import {
   ISSUE_SEVERITY_LABELS,
   ISSUE_STATUS_LABELS,
+  PROGRESS_COLUMN_LABELS,
   REPORT_TYPE_LABELS,
 } from '@/lib/reports/labels';
-import { getSnapshot } from '@/services/reports';
+import { type ReportPayload, getSnapshot } from '@/services/reports';
 import { requireSessionUser } from '@/services/session';
 
 export const metadata: Metadata = { title: 'Laporan Terbit' };
@@ -59,6 +62,12 @@ export default async function SnapshotPage({
   });
 
   const { payload } = snapshot;
+
+  // Older snapshots predate the weighted columns and say nothing about their
+  // period calendar; weekly is the wording those reports were written under.
+  const columns = PROGRESS_COLUMN_LABELS[payload.periodType ?? 'WEEK'];
+  const itemTotals = sumItems(payload.items);
+  const hasWeighted = payload.items.some((item) => item.weighted !== undefined);
 
   return (
     <div className="p-6">
@@ -145,8 +154,11 @@ export default async function SnapshotPage({
                     <TableHead>Uraian</TableHead>
                     <TableHead className="w-16">Sat</TableHead>
                     <TableHead className="w-24 text-right">Bobot</TableHead>
-                    <TableHead className="w-28 text-right">Sebelumnya</TableHead>
-                    <TableHead className="w-28 text-right">Periode ini</TableHead>
+                    <TableHead className="w-28 text-right">{columns.previous}</TableHead>
+                    <TableHead className="w-28 text-right">{columns.current}</TableHead>
+                    <TableHead className="w-32 text-right">{columns.cumulative}</TableHead>
+                    <TableHead className="w-28 text-right">Rencana</TableHead>
+                    <TableHead className="w-28 text-right">Deviasi</TableHead>
                     <TableHead className="w-24">Status</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -159,11 +171,26 @@ export default async function SnapshotPage({
                       <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
                         {formatPercent(item.weight, 1)}
                       </TableCell>
+                      <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
+                        {formatPercent(item.weighted?.previous, 2)}
+                      </TableCell>
                       <TableCell className="text-right font-mono tabular-nums">
-                        {formatPercent(item.completedBefore, 2)}
+                        {formatPercent(item.weighted?.current, 2)}
                       </TableCell>
                       <TableCell className="text-right font-mono font-medium tabular-nums">
-                        {formatPercent(item.pctThisPeriod, 2)}
+                        {formatPercent(item.weighted?.cumulative, 2)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
+                        {formatPercent(item.weighted?.planned, 2)}
+                      </TableCell>
+                      <TableCell
+                        className={`text-right font-mono tabular-nums ${
+                          Number(item.weighted?.deviation ?? 0) < 0
+                            ? 'text-destructive'
+                            : 'text-muted-foreground'
+                        }`}
+                      >
+                        {formatPercent(item.weighted?.deviation, 2)}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {item.status ?? EMPTY_VALUE}
@@ -171,6 +198,40 @@ export default async function SnapshotPage({
                     </TableRow>
                   ))}
                 </TableBody>
+
+                {/*
+                  Weighted columns exist so they can be added up; a report that
+                  makes the reader do it by hand has thrown that away.
+                  Suppressed on snapshots published before these columns
+                  existed, where a row of zeros would be a claim about the
+                  project rather than an absence of data.
+                */}
+                {hasWeighted ? (
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={3}>Jumlah</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {formatPercent(itemTotals.weight, 2)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {formatPercent(itemTotals.previous, 2)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {formatPercent(itemTotals.current, 2)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {formatPercent(itemTotals.cumulative, 2)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {formatPercent(itemTotals.planned, 2)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {formatPercent(itemTotals.deviation, 2)}
+                    </TableCell>
+                    <TableCell />
+                  </TableRow>
+                </TableFooter>
+                ) : null}
               </Table>
             </div>
           )}
@@ -271,6 +332,28 @@ export default async function SnapshotPage({
       </div>
     </div>
   );
+}
+
+/**
+ * Column totals for the recap table.
+ *
+ * Reads the frozen payload and nothing else. A snapshot published before the
+ * weighted columns existed contributes zero rather than being back-filled from
+ * today's data — the whole point of freezing is that a report does not change
+ * after it is handed over.
+ */
+function sumItems(items: ReportPayload['items']) {
+  const add = (pick: (item: ReportPayload['items'][number]) => string | undefined) =>
+    items.reduce((acc, item) => acc.plus(toDecimal(pick(item) ?? 0)), ZERO);
+
+  return {
+    weight: add((item) => item.weight),
+    previous: add((item) => item.weighted?.previous),
+    current: add((item) => item.weighted?.current),
+    cumulative: add((item) => item.weighted?.cumulative),
+    planned: add((item) => item.weighted?.planned),
+    deviation: add((item) => item.weighted?.deviation),
+  };
 }
 
 function Figure({

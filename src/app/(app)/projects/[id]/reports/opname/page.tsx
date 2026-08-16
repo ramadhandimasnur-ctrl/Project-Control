@@ -8,6 +8,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -19,13 +20,23 @@ import {
   ReportPhotoPicker,
   ReportPhotoPlates,
 } from '@/features/progress/report-photos';
+import { ZERO, toDecimal } from '@/lib/calc/decimal';
 import { PROGRESS_STATUS_LABELS } from '@/lib/calc/progress';
 import { EMPTY_VALUE, formatDay, formatPercent, formatQuantity } from '@/lib/format';
-import { getProgressBoard, getProgressComparison } from '@/services/progress';
+import {
+  getProgressBoard,
+  getProgressComparison,
+  type ProgressBoardRow,
+} from '@/services/progress';
 import { getProject } from '@/services/projects';
 import { requireSessionUser } from '@/services/session';
 
 export const metadata: Metadata = { title: 'Laporan Opname' };
+
+/** Adds a weighted column down the page, in decimal rather than float. */
+function sumOf(rows: readonly ProgressBoardRow[], pick: (row: ProgressBoardRow) => string) {
+  return rows.reduce((acc, row) => acc.plus(toDecimal(pick(row))), ZERO);
+}
 
 const STATUS_LABELS = {
   DRAFT: 'Draf',
@@ -146,6 +157,8 @@ export default async function OpnameReportPage({
                   <TableHead className="w-24 text-right">Qty</TableHead>
                   <TableHead className="w-24 text-right">Periode ini</TableHead>
                   <TableHead className="w-24 text-right">Kumulatif</TableHead>
+                  <TableHead className="w-24 text-right">Bobot ini</TableHead>
+                  <TableHead className="w-28 text-right">Bobot s.d. ini</TableHead>
                   <TableHead className="w-24">Status</TableHead>
                   {board.requireChecklist ? <TableHead className="w-20">Mutu</TableHead> : null}
                 </TableRow>
@@ -163,10 +176,19 @@ export default async function OpnameReportPage({
                       {formatPercent(row.pctThisPeriod, 2)}
                     </TableCell>
                     <TableCell className="text-right font-mono tabular-nums">
-                      {formatPercent(
-                        Number(row.completedBefore) + Number(row.pctThisPeriod),
-                        2,
-                      )}
+                      {formatPercent(toDecimal(row.earnedBefore).plus(row.pctThisPeriod), 2)}
+                    </TableCell>
+
+                    {/*
+                      The same progress expressed against the whole project, so
+                      the two figures at the head of this sheet can be checked
+                      by adding the column up.
+                    */}
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {formatPercent(row.weighted.current, 2)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {formatPercent(row.weighted.cumulative, 2)}
                     </TableCell>
                     <TableCell>
                       {row.status ? (
@@ -187,6 +209,19 @@ export default async function OpnameReportPage({
                   </TableRow>
                 ))}
               </TableBody>
+
+              <TableFooter>
+                <TableRow>
+                  <TableCell colSpan={6}>Jumlah bobot</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">
+                    {formatPercent(sumOf(reported, (row) => row.weighted.current), 2)}
+                  </TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">
+                    {formatPercent(sumOf(reported, (row) => row.weighted.cumulative), 2)}
+                  </TableCell>
+                  <TableCell colSpan={board.requireChecklist ? 2 : 1} />
+                </TableRow>
+              </TableFooter>
             </Table>
           </div>
         )}

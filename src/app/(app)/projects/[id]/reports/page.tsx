@@ -107,11 +107,22 @@ export default async function ReportsPage({
               diserahkan ke pemberi kerja, terbitkan laporan agar angkanya terkunci.
             </p>
             <div className="flex flex-wrap gap-2">
-              <ButtonLink variant="outline" href={`/projects/${projectId}/reports/opname`}>
+              {/*
+                Both carry the period chosen just above. Without it the sheet
+                and the spreadsheet would quietly describe a different period
+                from the one on screen.
+              */}
+              <ButtonLink
+                variant="outline"
+                href={`/projects/${projectId}/reports/opname${period ? `?period=${period.id}` : ''}`}
+              >
                 <Printer className="size-4" aria-hidden />
                 Laporan opname (cetak)
               </ButtonLink>
-              <ButtonLink variant="outline" href={`/projects/${projectId}/exports/progress`}>
+              <ButtonLink
+                variant="outline"
+                href={`/projects/${projectId}/exports/progress${period ? `?period=${period.id}` : ''}`}
+              >
                 <FileSpreadsheet className="size-4" aria-hidden />
                 Rekap progres
               </ButtonLink>

@@ -602,6 +602,15 @@ export type ScheduleOverview = {
   rows: GanttRow[];
   /** workItemId â†’ periodId â†’ planned share, only the non-zero cells. */
   matrix: Record<string, Record<string, string>>;
+  /**
+   * The plan progress is actually measured against: the active baseline when
+   * there is one, otherwise the draft.
+   *
+   * Distinct from `matrix`, which is always the editable draft because that is
+   * what the distribution editor writes back. Deviation read from `matrix`
+   * would move whenever someone opened the editor.
+   */
+  effectivePlan: { workItemId: string; periodId: string; plannedPct: string }[];
   curve: { periodId: string; seq: number; label: string; plannedPct: string; cumulativePct: string }[];
   /** True when the curve comes from a frozen baseline rather than the draft. */
   curveFromBaseline: boolean;
@@ -729,6 +738,7 @@ export const getScheduleOverview = cache(async function getScheduleOverview(
     periods,
     rows,
     matrix,
+    effectivePlan: source,
     curve,
     curveFromBaseline: baseline !== null,
     activeBaseline: baseline,

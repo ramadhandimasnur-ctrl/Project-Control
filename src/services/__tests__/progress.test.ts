@@ -520,6 +520,101 @@ describe.skipIf(!ready)('Progres lapangan', () => {
       expect(Number(row?.remaining)).toBeCloseTo(0.4, 9);
     });
 
+    /**
+     * The columns a weekly report is read down. Item A carries a weight of
+     * 0,25 and item B 0,75; the plan gives A half of itself in each of the
+     * first two periods.
+     */
+    describe('kolom bobot', () => {
+      const approve = async (workItemId: string, periodId: string) => {
+        const entries = await progress.listEntriesForPeriod(managerId, projectId, periodId);
+        const entry = entries.find((e) => e.workItemId === workItemId)!;
+        await progress.submitProgressEntry(field, projectId, entry.id);
+        await progress.approveProgressEntry(manager, projectId, entry.id);
+      };
+
+      it('memisahkan periode lalu, periode ini, dan kumulatifnya', async () => {
+        const [p1, p2] = await buildPlan();
+        await report(itemA, p1!, { pctThisPeriod: '0.5' });
+        await approve(itemA, p1!);
+        await report(itemA, p2!, { pctThisPeriod: '0.3' });
+        await approve(itemA, p2!);
+
+        const board = await progress.getProgressBoard(managerId, projectId, p2!);
+        const row = board.rows.find((r) => r.code === 'A.01');
+
+        expect(Number(row?.weighted.previous)).toBeCloseTo(0.125, 9);
+        expect(Number(row?.weighted.current)).toBeCloseTo(0.075, 9);
+        expect(Number(row?.weighted.cumulative)).toBeCloseTo(0.2, 9);
+        // Rencana menuntut item A selesai penuh pada periode 2.
+        expect(Number(row?.weighted.planned)).toBeCloseTo(0.25, 9);
+        expect(Number(row?.weighted.deviation)).toBeCloseTo(-0.05, 9);
+      });
+
+      /*
+       * The point of weighting: the column adds up to the realised curve. If
+       * these two ever disagree the report contradicts its own headline.
+       */
+      it('menjumlah persis sebesar kurva realisasi', async () => {
+        const [p1, p2] = await buildPlan();
+        await report(itemA, p1!, { pctThisPeriod: '0.5' });
+        await approve(itemA, p1!);
+        await report(itemB, p2!, { pctThisPeriod: '0.4' });
+        await approve(itemB, p2!);
+
+        const board = await progress.getProgressBoard(managerId, projectId, p2!);
+        const total = board.rows.reduce((acc, row) => acc + Number(row.weighted.cumulative), 0);
+
+        const comparison = await progress.getProgressComparison(managerId, projectId);
+        const atPeriod = comparison.points.find((point) => point.periodId === p2);
+
+        expect(total).toBeCloseTo(Number(atPeriod?.actualCumulative), 9);
+        expect(total).toBeCloseTo(0.425, 9);
+      });
+
+      it('tidak menghitung catatan yang belum disetujui', async () => {
+        const [p1] = await buildPlan();
+        await report(itemA, p1!, { pctThisPeriod: '0.5' });
+
+        const board = await progress.getProgressBoard(managerId, projectId, p1!);
+        const row = board.rows.find((r) => r.code === 'A.01');
+
+        expect(row?.status).toBe('DRAFT');
+        expect(Number(row?.weighted.current)).toBe(0);
+        expect(Number(row?.pctThisPeriod)).toBeCloseTo(0.5, 9);
+      });
+
+      /*
+       * A correction approved for a later period must not appear in a column
+       * headed "last period" — that is the difference between `earnedBefore`
+       * and `completedBefore`, and it only shows up out of order.
+       */
+      it('tidak menarik periode berikutnya ke dalam kolom periode lalu', async () => {
+        const [p1, p2] = await buildPlan();
+        await report(itemA, p2!, { pctThisPeriod: '0.4' });
+        await approve(itemA, p2!);
+
+        const board = await progress.getProgressBoard(managerId, projectId, p1!);
+        const row = board.rows.find((r) => r.code === 'A.01');
+
+        expect(Number(row?.completedBefore)).toBeCloseTo(0.4, 9);
+        expect(Number(row?.earnedBefore)).toBe(0);
+        expect(Number(row?.weighted.previous)).toBe(0);
+      });
+
+      it('membaca rencana dari baseline aktif', async () => {
+        const [p1] = await buildPlan();
+        const board = await progress.getProgressBoard(managerId, projectId, p1!);
+        const row = board.rows.find((r) => r.code === 'A.01');
+
+        expect(board.planFromBaseline).toBe(true);
+        expect(board.periodType).toBe('MONTH');
+        // Setengah item A pada periode 1, berbobot 0,25 → 0,125.
+        expect(Number(row?.plannedCumulative)).toBeCloseTo(0.5, 9);
+        expect(Number(row?.weighted.planned)).toBeCloseTo(0.125, 9);
+      });
+    });
+
     it('menghitung catatan yang menunggu keputusan', async () => {
       const [p1] = await buildPlan();
       await report(itemA, p1!);

@@ -202,6 +202,55 @@ describe.skipIf(!ready)('Laporan terbit', () => {
       expect(payload.curve).toBeNull();
     });
 
+    it('memuat kolom bobot periode lalu, periode ini, dan kumulatifnya', async () => {
+      const [p1, p2] = await periodIds();
+      await approveProgress(p1!, '0.4');
+      await approveProgress(p2!, '0.3');
+
+      const payload = await reports.buildReportPayload(userId, projectId, p2!, 'WEEKLY');
+      const item = payload.items.find((row) => row.code === 'A.01');
+
+      expect(Number(item?.weighted?.previous)).toBeCloseTo(0.4, 9);
+      expect(Number(item?.weighted?.current)).toBeCloseTo(0.3, 9);
+      expect(Number(item?.weighted?.cumulative)).toBeCloseTo(0.7, 9);
+      expect(item?.weighted?.deviation).toBeDefined();
+      expect(payload.periodType).toBeDefined();
+    });
+
+    /*
+     * The recap has to reconcile with the headline two sections above it, or
+     * the reader is left holding two different answers to the same question.
+     */
+    it('menjumlah kolom kumulatif persis sebesar kemajuan fisiknya', async () => {
+      const [p1, p2] = await periodIds();
+      await approveProgress(p1!, '0.4');
+      await approveProgress(p2!, '0.3');
+
+      const payload = await reports.buildReportPayload(userId, projectId, p2!, 'MONTHLY');
+      const total = payload.items.reduce(
+        (acc, item) => acc + Number(item.weighted?.cumulative ?? 0),
+        0,
+      );
+
+      expect(total).toBeCloseTo(Number(payload.physical.actualCumulative), 9);
+    });
+
+    /*
+     * A daily sheet is a record of one day's work; a weekly or monthly report
+     * is a recap of the whole scope, which is what makes its weight column add
+     * up to the project.
+     */
+    it('merekap seluruh lingkup pada laporan mingguan, hanya yang dicatat pada harian', async () => {
+      const [p1] = await periodIds();
+      await approveProgress(p1!, '0.4');
+
+      const daily = await reports.buildReportPayload(userId, projectId, p1!, 'DAILY');
+      const weekly = await reports.buildReportPayload(userId, projectId, p1!, 'WEEKLY');
+
+      expect(daily.items.every((item) => item.status !== null)).toBe(true);
+      expect(weekly.items.length).toBeGreaterThanOrEqual(daily.items.length);
+    });
+
     it('membawa kendala periode itu', async () => {
       const [p1] = await periodIds();
       await reports.saveIssue(user, projectId, null, {
