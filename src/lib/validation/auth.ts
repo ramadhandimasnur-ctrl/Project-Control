@@ -57,6 +57,37 @@ export const resetPasswordSchema = z
     path: ['confirmPassword'],
   });
 
+/**
+ * Changing your own password while signed in.
+ *
+ * The current password is required even though Supabase does not ask for it.
+ * A session alone is a weak claim to ownership — an unlocked laptop, a shared
+ * machine, a borrowed phone — and a password change is the one action that
+ * locks the real owner out permanently. Knowing the old password is what
+ * separates "the account holder" from "whoever is sitting here".
+ */
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Kata sandi saat ini wajib diisi.'),
+    password: z
+      .string()
+      .min(8, 'Kata sandi baru minimal 8 karakter.')
+      .max(72, 'Kata sandi baru maksimal 72 karakter.'),
+    confirmPassword: z.string(),
+  })
+  .refine((v) => v.password === v.confirmPassword, {
+    message: 'Konfirmasi kata sandi tidak cocok.',
+    path: ['confirmPassword'],
+  })
+  // Saving the same password is almost always a mistyped form, and reporting
+  // success would tell the user something changed when nothing did.
+  .refine((v) => v.password !== v.currentPassword, {
+    message: 'Kata sandi baru harus berbeda dari kata sandi saat ini.',
+    path: ['password'],
+  });
+
+export type ChangePasswordValues = z.output<typeof changePasswordSchema>;
+
 export type LoginValues = z.output<typeof loginSchema>;
 export type RegisterValues = z.output<typeof registerSchema>;
 export type ForgotPasswordValues = z.output<typeof forgotPasswordSchema>;

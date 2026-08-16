@@ -1,7 +1,7 @@
 'use client';
 
-import { LogOut, User } from 'lucide-react';
-import { useTransition } from 'react';
+import { KeyRound, LogOut, User } from 'lucide-react';
+import { useState, useTransition } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ChangePasswordDialog } from '@/features/account/change-password-dialog';
 
 import { signOutAction } from '../(auth)/actions';
 
@@ -25,6 +26,7 @@ export function UserMenu({
   globalRole: 'ADMIN' | 'MEMBER';
 }) {
   const [pending, startTransition] = useTransition();
+  const [changingPassword, setChangingPassword] = useState(false);
 
   const initials = fullName
     .split(/\s+/)
@@ -34,12 +36,18 @@ export function UserMenu({
     .toUpperCase();
 
   return (
-    <DropdownMenu>
-      {/*
-        The name is repeated in the label rather than replaced by it: on a
-        narrow screen the visible text is hidden and the button would otherwise
-        announce itself as nothing but its initials.
-      */}
+    /*
+      The dialog is a sibling of the menu, not a child of it. Nested inside,
+      it unmounts the moment the menu closes — which is the same moment the
+      item that opens it is selected, so the dialog never appears at all.
+    */
+    <>
+      <DropdownMenu>
+        {/*
+          The name is repeated in the label rather than replaced by it: on a
+          narrow screen the visible text is hidden and the button would otherwise
+          announce itself as nothing but its initials.
+        */}
       <DropdownMenuTrigger
         aria-label={`Menu akun ${fullName}`}
         render={<Button variant="ghost" size="sm" className="gap-2" />}
@@ -72,10 +80,24 @@ export function UserMenu({
           ) : null}
         </div>
         <DropdownMenuSeparator />
+
+        {/*
+          `onClick`, not `onSelect`.
+
+          Base UI's menu item has no `onSelect` prop. TypeScript accepts one
+          anyway — `onSelect` is a real DOM attribute on the underlying div,
+          for text selection — so the handler type-checked, rendered, and was
+          never called by a click. Both items here were inert until this was
+          found; "Keluar" had been doing nothing at all.
+        */}
+        <DropdownMenuItem onClick={() => setChangingPassword(true)}>
+          <KeyRound className="size-4" aria-hidden />
+          Ganti kata sandi
+        </DropdownMenuItem>
+
         <DropdownMenuItem
           disabled={pending}
-          onSelect={(event) => {
-            event.preventDefault();
+          onClick={() => {
             startTransition(() => {
               void signOutAction();
             });
@@ -84,7 +106,10 @@ export function UserMenu({
           <LogOut className="size-4" aria-hidden />
           {pending ? 'Keluar…' : 'Keluar'}
         </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <ChangePasswordDialog open={changingPassword} onOpenChange={setChangingPassword} />
+    </>
   );
 }

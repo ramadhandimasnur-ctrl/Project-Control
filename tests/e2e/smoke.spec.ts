@@ -135,6 +135,56 @@ test('menu akun terbuka tanpa melempar error', async ({ page }) => {
 });
 
 /*
+ * Signing out, by clicking it rather than by looking at it.
+ *
+ * The test above asserts the item is visible, which it always was — the
+ * handler behind it was bound to `onSelect`, a prop Base UI's menu item does
+ * not have, so the button rendered perfectly and did nothing. A visible
+ * control is not a working one, and only pressing it tells them apart.
+ */
+test('keluar benar-benar mengakhiri sesi', async ({ page }) => {
+  await signIn(page);
+
+  await page.getByRole('button', { name: /^Menu akun / }).click();
+  await page.getByRole('menuitem', { name: /keluar/i }).click();
+
+  await page.waitForURL(/\/login/, { timeout: 30_000 });
+
+  // Back to a protected page: still signed out, so it must bounce again.
+  await page.goto('/projects');
+  await expect(page).toHaveURL(/\/login/);
+});
+
+/*
+ * Changing your own password, up to the point where it would actually change.
+ *
+ * The refusal is what gets asserted rather than a successful change: a test
+ * that really rotated the seed account's password would break every later run
+ * of this suite, including its own sign-in. What matters here is that the
+ * dialog opens, submits, and that a wrong current password is refused — which
+ * is the guard the whole form exists for.
+ */
+test('ganti kata sandi menolak kata sandi lama yang salah', async ({ page }) => {
+  await signIn(page);
+
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+
+  await page.getByRole('button', { name: /^Menu akun / }).click();
+  await page.getByRole('menuitem', { name: /ganti kata sandi/i }).click();
+
+  await expect(page.getByRole('dialog')).toBeVisible();
+
+  await page.getByLabel('Kata sandi saat ini').fill('jelas-bukan-kata-sandinya');
+  await page.getByLabel('Kata sandi baru', { exact: true }).fill('KataSandiBaru123');
+  await page.getByLabel('Ulangi kata sandi baru').fill('KataSandiBaru123');
+  await page.getByRole('button', { name: /simpan kata sandi/i }).click();
+
+  await expect(page.getByText('Kata sandi saat ini salah.')).toBeVisible();
+  expect(errors, 'form ganti kata sandi melempar error di peramban').toEqual([]);
+});
+
+/*
  * The seeded account is an organisation administrator, so this page must open.
  * A member reaching it gets the refusal notice instead, which the service
  * enforces rather than the route.
