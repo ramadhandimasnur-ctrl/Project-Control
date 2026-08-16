@@ -1,9 +1,10 @@
-import { Hammer, MousePointerClick } from 'lucide-react';
+import { Hammer, MousePointerClick, Printer } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { EmptyState } from '@/components/empty-state';
 import { Badge } from '@/components/ui/badge';
+import { ButtonLink } from '@/components/ui/button';
 import { AhspPanel } from '@/features/work-items/ahsp-panel';
 import {
   WorkItemActionsBar,
@@ -71,9 +72,25 @@ export default async function WorkItemsPage({
             <p className="text-sm font-semibold">Pekerjaan</p>
             <p className="text-xs text-muted-foreground">{items.length} item</p>
           </div>
-          {canEdit ? (
-            <WorkItemCreateButton projectId={projectId} units={unitOptions} />
-          ) : null}
+          <div className="flex items-center gap-1">
+            {/*
+              Both analyses of every item, in one document. Placed beside the
+              list rather than inside a single item's panel because that is the
+              usual request: the whole AHSP book, for the tender file.
+            */}
+            <ButtonLink
+              href={`/projects/${projectId}/work-items/print`}
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Cetak AHSP seluruh pekerjaan"
+              title="Cetak AHSP (RAB & RAP) seluruh pekerjaan"
+            >
+              <Printer className="size-4" aria-hidden />
+            </ButtonLink>
+            {canEdit ? (
+              <WorkItemCreateButton projectId={projectId} units={unitOptions} />
+            ) : null}
+          </div>
         </div>
 
         <nav aria-label="Daftar pekerjaan" className="flex-1 overflow-y-auto p-2">

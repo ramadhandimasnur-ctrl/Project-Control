@@ -81,7 +81,7 @@ export async function getMaterialRequirement(
       workItemId: workItems.id,
       // Procurement follows what execution plans to build, not what was sold.
       volume: sql<string>`coalesce(${workItems.volumeRap}, ${workItems.volume})`,
-      coefRap: workItemResources.coefRap,
+      coefRap: workItemResources.coef,
       wasteFactor: workItemResources.wasteFactor,
       resourceCode: resources.code,
       resourceName: resources.name,
@@ -92,7 +92,14 @@ export async function getMaterialRequirement(
     .innerJoin(workItems, eq(workItems.id, workItemResources.workItemId))
     .innerJoin(resources, eq(resources.id, workItemResources.resourceId))
     .innerJoin(units, eq(units.id, resources.unitId))
-    .where(and(eq(workItems.projectId, projectId), eq(workItems.isActive, true)));
+    // Only the execution analysis describes what will be bought.
+    .where(
+      and(
+        eq(workItems.projectId, projectId),
+        eq(workItems.isActive, true),
+        eq(workItemResources.estimateType, 'RAP'),
+      ),
+    );
 
   if (demand.length === 0) {
     return {
@@ -326,7 +333,7 @@ export async function getMaterialScope(
       resourceId: workItemResources.resourceId,
       // Procurement follows what execution plans to build, not what was sold.
       volume: sql<string>`coalesce(${workItems.volumeRap}, ${workItems.volume})`,
-      coefRap: workItemResources.coefRap,
+      coefRap: workItemResources.coef,
       wasteFactor: workItemResources.wasteFactor,
       resourceCode: resources.code,
       resourceName: resources.name,
@@ -349,6 +356,8 @@ export async function getMaterialScope(
          * because its question is about what left the warehouse.
          */
         eq(resources.type, 'MATERIAL'),
+        // Only the execution analysis describes what will be bought.
+        eq(workItemResources.estimateType, 'RAP'),
       ),
     );
 

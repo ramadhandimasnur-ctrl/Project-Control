@@ -211,20 +211,26 @@ export function ApplyTemplateDialog({
                       <TableHead>Uraian</TableHead>
                       <TableHead className="w-16">Sat</TableHead>
                       <TableHead className="w-28">Bagian</TableHead>
-                      <TableHead className="w-24 text-right">Koef RAP</TableHead>
+                      {/* Which analysis a line lands in is now part of what the
+                          template carries, so the preview has to say it. */}
+                      <TableHead className="w-20">Analisa</TableHead>
+                      <TableHead className="w-24 text-right">Koef</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {preview.map((line, i) => (
-                      <TableRow key={`${line.resourceCode}-${line.role}-${i}`}>
+                      <TableRow key={`${line.resourceCode}-${line.estimateType}-${line.role}-${i}`}>
                         <TableCell className="font-mono text-xs">{line.resourceCode}</TableCell>
                         <TableCell>{line.resourceName}</TableCell>
                         <TableCell className="text-muted-foreground">{line.unitCode}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {AHSP_ROLE_LABELS[line.role as keyof typeof AHSP_ROLE_LABELS] ?? line.role}
                         </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {line.estimateType}
+                        </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">
-                          {formatCoefficient(line.coefRap)}
+                          {formatCoefficient(line.coef)}
                         </TableCell>
                       </TableRow>
                     ))}

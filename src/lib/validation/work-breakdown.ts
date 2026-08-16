@@ -162,20 +162,20 @@ export const TAKEOFF_FORM_DEFAULTS = {
 export const ahspLineFormSchema = z
   .object({
     resourceId: requiredId('Sumber daya'),
+    estimateType: z.enum(['RAB', 'RAP'], { message: 'Jenis analisa wajib dipilih.' }),
     role: z.enum(['LABOR', 'MATERIAL', 'EQUIPMENT', 'SUBCON', 'PACKAGE'], {
       message: 'Bagian analisa wajib dipilih.',
     }),
-    coefRab: coefficientField('Koefisien RAB'),
-    coefRap: coefficientField('Koefisien RAP'),
+    coef: coefficientField('Koefisien'),
     wasteFactor: percentField('Faktor susut'),
     note: optionalText(300),
     sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
   })
-  // A line contributing nothing to either estimate is almost always a
-  // half-finished entry rather than a deliberate zero.
-  .refine((v) => Number(v.coefRab) > 0 || Number(v.coefRap) > 0, {
-    message: 'Setidaknya satu koefisien harus lebih besar dari nol.',
-    path: ['coefRap'],
+  // A line contributing nothing is almost always a half-finished entry rather
+  // than a deliberate zero.
+  .refine((v) => Number(v.coef) > 0, {
+    message: 'Koefisien harus lebih besar dari nol.',
+    path: ['coef'],
   });
 
 export type AhspLineFormInput = z.input<typeof ahspLineFormSchema>;
@@ -183,13 +183,23 @@ export type AhspLineFormValues = z.output<typeof ahspLineFormSchema>;
 
 export const AHSP_LINE_FORM_DEFAULTS = {
   resourceId: '',
+  estimateType: 'RAB',
   role: 'MATERIAL',
-  coefRab: '0',
-  coefRap: '0',
+  coef: '0',
   wasteFactor: '0',
   note: '',
   sortOrder: 0,
 } satisfies AhspLineFormInput;
+
+export const ESTIMATE_TYPE_LABELS = {
+  RAB: 'AHSP RAB',
+  RAP: 'AHSP RAP',
+} as const;
+
+export const ESTIMATE_TYPE_CAPTIONS = {
+  RAB: 'Analisa anggaran: dasar nilai pekerjaan dan bobot.',
+  RAP: 'Analisa pelaksanaan: dasar biaya, pengadaan, dan margin.',
+} as const;
 
 // --- template & duplication -------------------------------------------------
 

@@ -444,9 +444,9 @@ export async function duplicateWorkItem(
     db
       .select({
         resourceId: workItemResources.resourceId,
+        estimateType: workItemResources.estimateType,
         role: workItemResources.role,
-        coefRab: workItemResources.coefRab,
-        coefRap: workItemResources.coefRap,
+        coef: workItemResources.coef,
         wasteFactor: workItemResources.wasteFactor,
         note: workItemResources.note,
         sortOrder: workItemResources.sortOrder,

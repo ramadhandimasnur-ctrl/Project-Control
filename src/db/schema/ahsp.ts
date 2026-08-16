@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { check, index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
 import { coefficient, percent, primaryId } from './_shared';
-import { ahspRoleEnum } from './enums';
+import { ahspRoleEnum, priceTypeEnum } from './enums';
 import { auditColumns, organizations } from './org';
 import { resources, units } from './resources';
 
@@ -39,17 +39,20 @@ export const ahspTemplateResources = pgTable(
       .notNull()
       .references(() => resources.id, { onDelete: 'restrict' }),
     role: ahspRoleEnum('role').notNull(),
-    coefRab: coefficient('coef_rab').notNull().default('0'),
-    coefRap: coefficient('coef_rap').notNull().default('0'),
+    /** Mirrors work_item_resources: a template line belongs to one analysis. */
+    estimateType: priceTypeEnum('estimate_type').notNull(),
+    coef: coefficient('coef').notNull().default('0'),
     wasteFactor: percent('waste_factor').notNull().default('0'),
     ...auditColumns(),
   },
   (t) => [
-    uniqueIndex('ahsp_template_resources_unique').on(t.templateId, t.resourceId, t.role),
-    index('ahsp_template_resources_template_idx').on(t.templateId),
-    check(
-      'ahsp_template_resources_nonneg',
-      sql`${t.coefRab} >= 0 AND ${t.coefRap} >= 0 AND ${t.wasteFactor} >= 0`,
+    uniqueIndex('ahsp_template_resources_unique').on(
+      t.templateId,
+      t.estimateType,
+      t.resourceId,
+      t.role,
     ),
+    index('ahsp_template_resources_template_idx').on(t.templateId),
+    check('ahsp_template_resources_nonneg', sql`${t.coef} >= 0 AND ${t.wasteFactor} >= 0`),
   ],
 );

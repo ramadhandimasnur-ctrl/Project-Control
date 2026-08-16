@@ -315,8 +315,8 @@ export type TemplatePreviewLine = {
   resourceName: string;
   unitCode: string;
   role: string;
-  coefRab: string;
-  coefRap: string;
+  estimateType: 'RAB' | 'RAP';
+  coef: string;
   wasteFactor: string;
 };
 

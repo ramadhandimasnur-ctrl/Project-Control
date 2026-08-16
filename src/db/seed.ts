@@ -287,19 +287,33 @@ async function main(): Promise<void> {
         .returning({ id: workItems.id, code: workItems.code });
       const itemId = new Map(itemRows.map((w) => [w.code, w.id]));
 
+      /*
+       * One demo line becomes up to two stored rows, one per analysis — the
+       * same shape migration 0015 gave the real data. A coefficient of zero
+       * writes nothing: an analysis that does not use a resource should not
+       * list it.
+       */
       await tx.insert(workItemResources).values(
         DEMO_WORK_ITEMS.flatMap((w) =>
-          w.lines.map((line, i) => ({
-            workItemId: itemId.get(w.code)!,
-            resourceId: resourceId.get(line.resource)!,
-            role: line.role,
-            coefRab: line.coefRab,
-            coefRap: line.coefRap,
-            wasteFactor: line.wasteFactor ?? '0',
-            sortOrder: i,
-            createdBy: adminId,
-            updatedBy: adminId,
-          })),
+          w.lines.flatMap((line, i) =>
+            (['RAB', 'RAP'] as const)
+              .map((estimateType) => ({
+                estimateType,
+                coef: estimateType === 'RAB' ? line.coefRab : line.coefRap,
+              }))
+              .filter((side) => Number(side.coef) > 0)
+              .map((side) => ({
+                workItemId: itemId.get(w.code)!,
+                resourceId: resourceId.get(line.resource)!,
+                role: line.role,
+                estimateType: side.estimateType,
+                coef: side.coef,
+                wasteFactor: line.wasteFactor ?? '0',
+                sortOrder: i,
+                createdBy: adminId,
+                updatedBy: adminId,
+              })),
+          ),
         ),
       );
 

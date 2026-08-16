@@ -75,6 +75,13 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
     { code: 'E.01', name: 'mixer', unit: 'jam', role: 'EQUIPMENT', coef: '0.5', rab: '85000', rap: '80000' },
   ] as const;
 
+  /**
+   * Stored rows, which is twice the resource count: the fixture puts each
+   * resource in both analyses. Counting resources instead would silently pass
+   * on a bug that dropped one whole analysis.
+   */
+  const ANALYSIS_ROWS = ANALYSIS.length * 2;
+
   const buildFixture = async (): Promise<void> => {
     const unitIds = new Map<string, string>();
     for (const unit of ['m3', 'zak', 'OH', 'jam']) unitIds.set(unit, randomUUID());
@@ -130,12 +137,16 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
                  '${unitIds.get('m3')}', 100, 1250000)`,
     );
 
+    // One analysis row per side. The fixture gives both the same coefficient
+    // so the hand-checked totals below still hold.
     for (const [index, row] of ANALYSIS.entries()) {
-      statements.push(
-        `INSERT INTO work_item_resources (work_item_id, resource_id, role, coef_rab, coef_rap, sort_order)
-           VALUES ('${workItemId}', '${resourceIds.get(row.code)}', '${row.role}',
-                   ${row.coef}, ${row.coef}, ${index})`,
-      );
+      for (const estimateType of ['RAB', 'RAP'] as const) {
+        statements.push(
+          `INSERT INTO work_item_resources (work_item_id, resource_id, role, estimate_type, coef, sort_order)
+             VALUES ('${workItemId}', '${resourceIds.get(row.code)}', '${row.role}',
+                     '${estimateType}', ${row.coef}, ${index})`,
+        );
+      }
     }
 
     statements.push('COMMIT');
@@ -184,20 +195,22 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
     // The charter's own worked example: 100 m3 x 8 zak x Rp48.000.
     it('menghitung kebutuhan dan nilai semen persis seperti contoh dokumen', async () => {
       const estimate = await ahsp.getWorkItemEstimate(userId, projectId, workItemId, ON_DATE);
-      const cement = estimate.lines.find((l) => l.resourceCode === 'M.01');
+      const cement = estimate.lines.find(
+        (l) => l.resourceCode === 'M.01' && l.estimateType === 'RAP',
+      );
 
-      expect(cement?.qtyRap).toBe('800.0000');
-      expect(cement?.amountRap).toBe('38400000.00');
+      expect(cement?.qty).toBe('800.0000');
+      expect(cement?.amount).toBe('38400000.00');
     });
 
     it('menjumlahkan per bagian analisa untuk footer', async () => {
       const estimate = await ahsp.getWorkItemEstimate(userId, projectId, workItemId, ON_DATE);
 
       // 384.000 + 142.500 + 268.000, dikali volume 100
-      expect(estimate.subtotalsRap.MATERIAL).toBe('79450000.00');
+      expect(estimate.subtotals.RAP.MATERIAL).toBe('79450000.00');
       // 189.750 + 39.875 + 14.525, dikali volume 100
-      expect(estimate.subtotalsRap.LABOR).toBe('24415000.00');
-      expect(estimate.subtotalsRap.EQUIPMENT).toBe('4000000.00');
+      expect(estimate.subtotals.RAP.LABOR).toBe('24415000.00');
+      expect(estimate.subtotals.RAP.EQUIPMENT).toBe('4000000.00');
     });
 
     it('menerapkan faktor susut tepat sebesar persentasenya', async () => {
@@ -208,10 +221,12 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
       `);
 
       const estimate = await ahsp.getWorkItemEstimate(userId, projectId, workItemId, ON_DATE);
-      const cement = estimate.lines.find((l) => l.resourceCode === 'M.01');
+      const cement = estimate.lines.find(
+        (l) => l.resourceCode === 'M.01' && l.estimateType === 'RAP',
+      );
 
-      expect(cement?.qtyRap).toBe('840.0000');
-      expect(cement?.amountRap).toBe('40320000.00');
+      expect(cement?.qty).toBe('840.0000');
+      expect(cement?.amount).toBe('40320000.00');
     });
 
     // A resource with no price must not silently become zero in the total
@@ -225,15 +240,50 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
 
       const estimate = await ahsp.getWorkItemEstimate(userId, projectId, workItemId, ON_DATE);
 
-      const mixer = estimate.lines.find((l) => l.resourceCode === 'E.01');
-      expect(mixer?.priceRap).toBeNull();
-      expect(mixer?.amountRap).toBeNull();
+      const mixer = estimate.lines.find(
+        (l) => l.resourceCode === 'E.01' && l.estimateType === 'RAP',
+      );
+      expect(mixer?.price).toBeNull();
+      expect(mixer?.amount).toBeNull();
 
       const missing = estimate.missingPrices.find((m) => m.code === 'E.01');
       expect(missing?.priceType).toBe('RAP');
 
       // The total drops by exactly the mixer's contribution, nothing else.
       expect(estimate.totalRap).toBe('103865000.00');
+      // …and the budget side, which has its own price, is untouched.
+      expect(estimate.totalRab).toBe('112669000.00');
+    });
+
+    /*
+     * The point of the split: the two analyses may name different resources
+     * entirely. A budget priced on site-batched concrete against an execution
+     * plan that buys ready-mix used to need zero-coefficient rows in both
+     * sheets to express itself.
+     */
+    it('membiarkan kedua analisa memuat sumber daya yang berbeda', async () => {
+      await sql.unsafe(`
+        DELETE FROM work_item_resources
+        WHERE work_item_id = '${workItemId}'
+          AND estimate_type = 'RAP'
+          AND resource_id = (SELECT id FROM resources WHERE org_id = '${orgId}' AND code = 'E.01')
+      `);
+
+      const estimate = await ahsp.getWorkItemEstimate(userId, projectId, workItemId, ON_DATE);
+
+      expect(
+        estimate.lines.some((l) => l.resourceCode === 'E.01' && l.estimateType === 'RAB'),
+      ).toBe(true);
+      expect(
+        estimate.lines.some((l) => l.resourceCode === 'E.01' && l.estimateType === 'RAP'),
+      ).toBe(false);
+
+      // The budget keeps the mixer; execution no longer pays for it.
+      expect(estimate.totalRab).toBe('112669000.00');
+      expect(estimate.totalRap).toBe('103865000.00');
+      // Nothing is reported missing: the RAP book was never asked for a price
+      // for a resource its analysis does not name.
+      expect(estimate.missingPrices).toHaveLength(0);
     });
   });
 
@@ -460,7 +510,7 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
       });
 
       const applied = await templates.applyTemplate(user, projectId, target.id, template.id);
-      expect(applied.added).toBe(ANALYSIS.length);
+      expect(applied.added).toBe(ANALYSIS_ROWS);
       expect(applied.skipped).toBe(0);
 
       // Same unit rate, half the volume, so half the total.
@@ -477,10 +527,10 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
 
       const again = await templates.applyTemplate(user, projectId, workItemId, template.id);
       expect(again.added).toBe(0);
-      expect(again.skipped).toBe(ANALYSIS.length);
+      expect(again.skipped).toBe(ANALYSIS_ROWS);
 
       const estimate = await ahsp.getWorkItemEstimate(userId, projectId, workItemId);
-      expect(estimate.lines).toHaveLength(ANALYSIS.length);
+      expect(estimate.lines).toHaveLength(ANALYSIS_ROWS);
     });
 
     it('mode REPLACE mengganti seluruh analisa', async () => {
@@ -492,8 +542,8 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
       const replaced = await templates.applyTemplate(
         user, projectId, workItemId, template.id, 'REPLACE',
       );
-      expect(replaced.removed).toBe(ANALYSIS.length);
-      expect(replaced.added).toBe(ANALYSIS.length);
+      expect(replaced.removed).toBe(ANALYSIS_ROWS);
+      expect(replaced.added).toBe(ANALYSIS_ROWS);
 
       const estimate = await ahsp.getWorkItemEstimate(userId, projectId, workItemId);
       expect(estimate.totalRap).toBe('107865000.00');
@@ -540,7 +590,7 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
       const impact = await breakdown.getWorkItemDeletionImpact(userId, projectId, copy.id);
       expect(impact.progressEntries).toBe(0);
       expect(impact.materialTransactions).toBe(0);
-      expect(impact.ahspLines).toBe(ANALYSIS.length);
+      expect(impact.ahspLines).toBe(ANALYSIS_ROWS);
     });
 
     it('menolak kode duplikat saat menyalin', async () => {

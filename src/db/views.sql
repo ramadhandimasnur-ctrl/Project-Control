@@ -63,42 +63,56 @@ WITH priced_line AS (
     wir.work_item_id,
     wi.project_id,
     wir.role,
-    wir.coef_rab * (1 + wir.waste_factor) AS eff_coef_rab,
-    wir.coef_rap * (1 + wir.waste_factor) AS eff_coef_rap,
-    rab.price AS price_rab,
-    rap.price AS price_rap
+    wir.estimate_type,
+    wir.coef * (1 + wir.waste_factor) AS eff_coef,
+    -- One price per line, of the type the line belongs to. A line is part of
+    -- exactly one analysis now, so resolving both would price a resource the
+    -- other analysis never asked for.
+    pr.price
   FROM work_item_resources wir
   JOIN work_items wi ON wi.id = wir.work_item_id
   LEFT JOIN LATERAL (
     SELECT rp.price
     FROM resource_prices rp
     WHERE rp.resource_id = wir.resource_id
-      AND rp.price_type = 'RAB'
+      AND rp.price_type = wir.estimate_type
       AND rp.effective_from <= CURRENT_DATE
       AND (rp.project_id IS NULL OR rp.project_id = wi.project_id)
     ORDER BY (rp.project_id IS NOT NULL) DESC, rp.effective_from DESC, rp.id DESC
     LIMIT 1
-  ) rab ON true
-  LEFT JOIN LATERAL (
-    SELECT rp.price
-    FROM resource_prices rp
-    WHERE rp.resource_id = wir.resource_id
-      AND rp.price_type = 'RAP'
-      AND rp.effective_from <= CURRENT_DATE
-      AND (rp.project_id IS NULL OR rp.project_id = wi.project_id)
-    ORDER BY (rp.project_id IS NOT NULL) DESC, rp.effective_from DESC, rp.id DESC
-    LIMIT 1
-  ) rap ON true
+  ) pr ON true
 ),
 rolled_up AS (
   SELECT
     work_item_id,
-    sum(eff_coef_rab * coalesce(price_rab, 0)) AS unit_cost_rab,
-    sum(eff_coef_rap * coalesce(price_rap, 0)) AS unit_cost_rap,
-    count(*) FILTER (WHERE price_rab IS NULL OR price_rap IS NULL) AS missing_price_count,
-    count(*) AS line_count
+    coalesce(sum(eff_coef * coalesce(price, 0))
+      FILTER (WHERE estimate_type = 'RAB'), 0)  AS unit_cost_rab,
+    coalesce(sum(eff_coef * coalesce(price, 0))
+      FILTER (WHERE estimate_type = 'RAP'), 0)  AS unit_cost_rap,
+    count(*) FILTER (WHERE estimate_type = 'RAB') AS rab_line_count,
+    count(*) FILTER (WHERE estimate_type = 'RAP') AS rap_line_count,
+    count(*) FILTER (WHERE price IS NULL)         AS missing_price_count,
+    count(*)                                      AS line_count
   FROM priced_line
   GROUP BY work_item_id
+),
+-- An analysis that does not exist falls back to the unit price typed on the
+-- item, mirroring estimateWorkItem. An analysis that does exist always wins.
+resolved AS (
+  SELECT
+    wi.id AS work_item_id,
+    CASE
+      WHEN coalesce(r.rab_line_count, 0) > 0 THEN r.unit_cost_rab
+      ELSE coalesce(wi.unit_price_rab, wi.unit_price_rap, 0)
+    END AS unit_cost_rab,
+    CASE
+      WHEN coalesce(r.rap_line_count, 0) > 0 THEN r.unit_cost_rap
+      ELSE coalesce(wi.unit_price_rap, wi.unit_price_rab, 0)
+    END AS unit_cost_rap,
+    coalesce(r.line_count, 0)          AS line_count,
+    coalesce(r.missing_price_count, 0) AS missing_price_count
+  FROM work_items wi
+  LEFT JOIN rolled_up r ON r.work_item_id = wi.id
 )
 SELECT
   wi.id                                   AS work_item_id,
@@ -106,28 +120,30 @@ SELECT
   wi.code,
   wi.name,
   wi.volume,
+  -- Null means "the same as the contracted volume"; see the column comment.
+  coalesce(wi.volume_rap, wi.volume)      AS volume_rap,
   wi.include_in_progress_weight,
   wi.is_active,
-  coalesce(r.line_count, 0)               AS line_count,
-  coalesce(r.missing_price_count, 0)      AS missing_price_count,
-  coalesce(r.unit_cost_rab, 0)            AS unit_cost_rab,
-  coalesce(r.unit_cost_rap, 0)            AS unit_cost_rap,
-  wi.volume * coalesce(r.unit_cost_rab, 0) AS total_rab,
-  wi.volume * coalesce(r.unit_cost_rap, 0) AS total_rap,
+  x.line_count,
+  x.missing_price_count,
+  x.unit_cost_rab,
+  x.unit_cost_rap,
+  wi.volume * x.unit_cost_rab                            AS total_rab,
+  coalesce(wi.volume_rap, wi.volume) * x.unit_cost_rap   AS total_rap,
   -- Design decision 1: the contract unit price is the authority. Only its
   -- absence falls back to RAB plus markup — a price of zero is a decision,
   -- not a gap, so COALESCE is applied to the price and never to the product.
   CASE
     WHEN wi.contract_unit_price IS NOT NULL THEN wi.volume * wi.contract_unit_price
-    ELSE wi.volume * coalesce(r.unit_cost_rab, 0) * (1 + p.default_markup)
+    ELSE wi.volume * x.unit_cost_rab * (1 + p.default_markup)
   END                                     AS contract_value,
   CASE
     WHEN wi.contract_unit_price IS NOT NULL THEN wi.volume * wi.contract_unit_price
-    ELSE wi.volume * coalesce(r.unit_cost_rab, 0) * (1 + p.default_markup)
-  END - wi.volume * coalesce(r.unit_cost_rap, 0) AS margin
+    ELSE wi.volume * x.unit_cost_rab * (1 + p.default_markup)
+  END - coalesce(wi.volume_rap, wi.volume) * x.unit_cost_rap AS margin
 FROM work_items wi
 JOIN projects p ON p.id = wi.project_id
-LEFT JOIN rolled_up r ON r.work_item_id = wi.id;
+JOIN resolved x ON x.work_item_id = wi.id;
 
 COMMENT ON VIEW v_work_item_cost IS
   'RAB, RAP, nilai kontrak, dan margin per pekerjaan. Cermin SQL dari lib/calc/estimate.ts.';
@@ -223,9 +239,10 @@ SELECT
   r.type                                        AS resource_type,
   u.code                                        AS unit_code,
   count(DISTINCT wi.id)                         AS work_item_count,
-  sum(wi.volume * wir.coef_rap * (1 + wir.waste_factor)) AS qty_required,
+  sum(coalesce(wi.volume_rap, wi.volume) * wir.coef * (1 + wir.waste_factor)) AS qty_required,
   max(rap.price)                                AS price_rap,
-  sum(wi.volume * wir.coef_rap * (1 + wir.waste_factor)) * max(rap.price) AS value_rap
+  sum(coalesce(wi.volume_rap, wi.volume) * wir.coef * (1 + wir.waste_factor))
+    * max(rap.price)                            AS value_rap
 FROM work_item_resources wir
 JOIN work_items wi ON wi.id = wir.work_item_id AND wi.is_active
 JOIN resources r ON r.id = wir.resource_id
@@ -240,6 +257,9 @@ LEFT JOIN LATERAL (
   ORDER BY (rp.project_id IS NOT NULL) DESC, rp.effective_from DESC, rp.id DESC
   LIMIT 1
 ) rap ON true
+-- Only the execution analysis. Budget lines describe what was priced, not what
+-- will be bought, and counting both would order every material twice.
+WHERE wir.estimate_type = 'RAP'
 GROUP BY wi.project_id, wir.resource_id, r.code, r.name, r.type, u.code;
 
 COMMENT ON VIEW v_material_requirement IS

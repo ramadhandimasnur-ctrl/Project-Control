@@ -17,16 +17,36 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { EMPTY_VALUE, formatCoefficient, formatCurrency, formatPercent, formatQuantity } from '@/lib/format';
-import { AHSP_ROLE_LABELS, AHSP_ROLE_ORDER } from '@/lib/validation/work-breakdown';
-import type { AhspLineView, AhspRole, WorkItemEstimateView } from '@/services/ahsp';
+import {
+  EMPTY_VALUE,
+  formatCoefficient,
+  formatCurrency,
+  formatPercent,
+  formatQuantity,
+} from '@/lib/format';
+import {
+  AHSP_ROLE_LABELS,
+  AHSP_ROLE_ORDER,
+  ESTIMATE_TYPE_CAPTIONS,
+  ESTIMATE_TYPE_LABELS,
+} from '@/lib/validation/work-breakdown';
+import type {
+  AhspLineView,
+  AhspRole,
+  EstimateType,
+  WorkItemEstimateView,
+} from '@/services/ahsp';
 
 import { deleteAhspLineAction } from './actions';
 import { AhspLineDialog } from './ahsp-line-dialog';
 
 /**
- * The right-hand panel: one work item's analysis, grouped into the sections
- * the source workbook uses (A TENAGA / B BAHAN / C ALAT / D SUBKON / E PAKET).
+ * The right-hand panel: one work item's two analyses.
+ *
+ * RAB and RAP are separate documents rather than two columns of one. They may
+ * name different resources entirely — a budget priced on site-batched concrete
+ * against an execution plan that buys ready-mix — and the earlier shared row
+ * could only express that as zero-coefficient lines cluttering both sheets.
  *
  * Every figure is rendered from what the server computed. Nothing is
  * multiplied here — charter rule 3 puts the arithmetic in lib/calc, and a
@@ -56,14 +76,8 @@ export function AhspPanel({
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState<AhspLineView | null>(null);
-  const [adding, setAdding] = useState<AhspRole | null>(null);
+  const [adding, setAdding] = useState<{ role: AhspRole; estimateType: EstimateType } | null>(null);
   const [pending, startTransition] = useTransition();
-
-  const byRole = new Map<AhspRole, AhspLineView[]>();
-  for (const role of AHSP_ROLE_ORDER) byRole.set(role, []);
-  for (const line of estimate.lines) byRole.get(line.role)?.push(line);
-
-  const emptyRoles = AHSP_ROLE_ORDER.filter((role) => (byRole.get(role) ?? []).length === 0);
 
   const removeLine = (line: AhspLineView) => {
     startTransition(async () => {
@@ -78,7 +92,7 @@ export function AhspPanel({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b pb-3">
         <div>
           <p className="font-mono text-xs text-muted-foreground">{workItemCode}</p>
@@ -86,6 +100,9 @@ export function AhspPanel({
         </div>
         <p className="text-sm text-muted-foreground">
           Volume {formatQuantity(estimate.volume)} {unitCode}
+          {estimate.volumeRap === estimate.volume
+            ? ''
+            : ` · RAP ${formatQuantity(estimate.volumeRap)} ${unitCode}`}
         </p>
       </div>
 
@@ -103,155 +120,29 @@ export function AhspPanel({
                 </li>
               ))}
             </ul>
-            <p className="mt-2">Tambahkan di Master Data → Sumber Daya → Tambah harga.</p>
+            <p className="mt-2">Tambahkan di Master Data → Sumber Daya.</p>
           </AlertDescription>
         </Alert>
       ) : null}
 
-      {/*
-        Empty sections collapse into one row of buttons instead of five dashed
-        boxes. On a work item with no analysis yet the old layout was almost
-        entirely empty placeholders, which buried the sections that did have
-        content.
-      */}
-      {canEdit && emptyRoles.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed px-3 py-2">
-          <span className="text-xs text-muted-foreground">Bagian yang belum diisi:</span>
-          {emptyRoles.map((role) => (
-            <Button key={role} variant="ghost" size="sm" onClick={() => setAdding(role)}>
-              <Plus className="size-3.5" aria-hidden />
-              {AHSP_ROLE_LABELS[role]}
-            </Button>
-          ))}
-        </div>
-      ) : null}
-
-      {AHSP_ROLE_ORDER.map((role) => {
-        const lines = byRole.get(role) ?? [];
-        if (lines.length === 0) return null;
-
-        return (
-          <section key={role} className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">
-                {AHSP_ROLE_LABELS[role]}
-                <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  {lines.length} baris
-                </span>
-              </h3>
-              {canEdit ? (
-                <Button variant="ghost" size="sm" onClick={() => setAdding(role)}>
-                  <Plus className="size-4" aria-hidden />
-                  Tambah baris
-                </Button>
-              ) : null}
-            </div>
-
-            {(
-              <div className="overflow-x-auto rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-20">Kode</TableHead>
-                      <TableHead>Uraian</TableHead>
-                      <TableHead className="w-16">Sat</TableHead>
-                      <TableHead className="w-24 text-right">Koef</TableHead>
-                      <TableHead className="w-20 text-right">Susut</TableHead>
-                      <TableHead className="w-28 text-right">Kebutuhan</TableHead>
-                      {showCosts ? <TableHead className="w-32 text-right">Harga</TableHead> : null}
-                      {showCosts ? <TableHead className="w-36 text-right">Jumlah</TableHead> : null}
-                      {canEdit ? <TableHead className="w-10" /> : null}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {lines.map((line) => (
-                      <TableRow
-                        key={line.id}
-                        className={canEdit ? 'cursor-pointer' : undefined}
-                        onClick={canEdit ? () => setEditing(line) : undefined}
-                      >
-                        <TableCell className="font-mono text-xs">{line.resourceCode}</TableCell>
-                        <TableCell>
-                          {line.resourceName}
-                          {line.resourceSpec ? (
-                            <span className="block text-xs text-muted-foreground">
-                              {line.resourceSpec}
-                            </span>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">{line.unitCode}</TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
-                          {formatCoefficient(line.coefRap)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
-                          {Number(line.wasteFactor) === 0
-                            ? EMPTY_VALUE
-                            : formatPercent(line.wasteFactor, 1)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
-                          {formatQuantity(line.qtyRap)}
-                        </TableCell>
-                        {showCosts ? (
-                          <TableCell className="text-right font-mono tabular-nums">
-                            {line.priceRap === null ? (
-                              <span className="text-destructive">{EMPTY_VALUE}</span>
-                            ) : (
-                              formatCurrency(line.priceRap)
-                            )}
-                          </TableCell>
-                        ) : null}
-                        {showCosts ? (
-                          <TableCell className="text-right font-mono tabular-nums">
-                            {line.amountRap === null ? (
-                              <span className="text-destructive">{EMPTY_VALUE}</span>
-                            ) : (
-                              formatCurrency(line.amountRap)
-                            )}
-                          </TableCell>
-                        ) : null}
-                        {canEdit ? (
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label={`Hapus ${line.resourceName}`}
-                              disabled={pending}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removeLine(line);
-                              }}
-                            >
-                              <Trash2 className="size-4" aria-hidden />
-                            </Button>
-                          </TableCell>
-                        ) : null}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-
-                  {/*
-                    The subtotal sits under the column it sums instead of
-                    floating as a line of prose beneath the table — that is
-                    where a reader checking an AHSP sheet looks for it.
-                  */}
-                  {showCosts ? (
-                    <TableFooter>
-                      <TableRow>
-                        <TableCell colSpan={6}>Jumlah {AHSP_ROLE_LABELS[role]}</TableCell>
-                        <TableCell />
-                        <TableCell className="text-right font-mono font-medium tabular-nums">
-                          {formatCurrency(estimate.subtotalsRap[role])}
-                        </TableCell>
-                        {canEdit ? <TableCell /> : null}
-                      </TableRow>
-                    </TableFooter>
-                  ) : null}
-                </Table>
-              </div>
-            )}
-          </section>
-        );
-      })}
+      {(['RAB', 'RAP'] as const).map((estimateType) => (
+        <AnalysisSection
+          key={estimateType}
+          estimateType={estimateType}
+          lines={estimate.lines.filter((line) => line.estimateType === estimateType)}
+          subtotals={estimate.subtotals[estimateType]}
+          unitCost={estimateType === 'RAB' ? estimate.unitCostRab : estimate.unitCostRap}
+          volume={estimateType === 'RAB' ? estimate.volume : estimate.volumeRap}
+          total={estimateType === 'RAB' ? estimate.totalRab : estimate.totalRap}
+          unitCode={unitCode}
+          canEdit={canEdit}
+          showCosts={showCosts}
+          pending={pending}
+          onAdd={(role) => setAdding({ role, estimateType })}
+          onEdit={setEditing}
+          onRemove={removeLine}
+        />
+      ))}
 
       {/*
         A unit rate with no analysis under it would otherwise be a number with
@@ -321,7 +212,8 @@ export function AhspPanel({
           projectId={projectId}
           workItemId={workItemId}
           lineId={null}
-          defaultRole={adding}
+          defaultRole={adding.role}
+          defaultEstimateType={adding.estimateType}
           resources={resources}
         />
       ) : null}
@@ -334,11 +226,12 @@ export function AhspPanel({
           workItemId={workItemId}
           lineId={editing.id}
           defaultRole={editing.role}
+          defaultEstimateType={editing.estimateType}
           defaultValues={{
             resourceId: editing.resourceId,
+            estimateType: editing.estimateType,
             role: editing.role,
-            coefRab: editing.coefRab,
-            coefRap: editing.coefRap,
+            coef: editing.coef,
             wasteFactor: String(Number(editing.wasteFactor) * 100),
             note: editing.note ?? '',
             sortOrder: editing.sortOrder,
@@ -347,6 +240,215 @@ export function AhspPanel({
         />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * One of the two analyses, grouped into the sections the source workbook uses
+ * (A TENAGA / B BAHAN / C ALAT / D SUBKON / E PAKET).
+ */
+function AnalysisSection({
+  estimateType,
+  lines,
+  subtotals,
+  unitCost,
+  volume,
+  total,
+  unitCode,
+  canEdit,
+  showCosts,
+  pending,
+  onAdd,
+  onEdit,
+  onRemove,
+}: {
+  estimateType: EstimateType;
+  lines: AhspLineView[];
+  subtotals: Record<AhspRole, string>;
+  unitCost: string;
+  volume: string;
+  total: string;
+  unitCode: string;
+  canEdit: boolean;
+  showCosts: boolean;
+  pending: boolean;
+  onAdd: (role: AhspRole) => void;
+  onEdit: (line: AhspLineView) => void;
+  onRemove: (line: AhspLineView) => void;
+}) {
+  const byRole = new Map<AhspRole, AhspLineView[]>();
+  for (const role of AHSP_ROLE_ORDER) byRole.set(role, []);
+  for (const line of lines) byRole.get(line.role)?.push(line);
+
+  const emptyRoles = AHSP_ROLE_ORDER.filter((role) => (byRole.get(role) ?? []).length === 0);
+
+  return (
+    <section className="space-y-3 rounded-lg border p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">{ESTIMATE_TYPE_LABELS[estimateType]}</h3>
+          <p className="text-xs text-muted-foreground">{ESTIMATE_TYPE_CAPTIONS[estimateType]}</p>
+        </div>
+        {showCosts ? (
+          <p className="text-sm">
+            <span className="font-mono font-semibold tabular-nums">{formatCurrency(unitCost)}</span>
+            <span className="text-xs text-muted-foreground"> / {unitCode}</span>
+            <span className="ml-3 text-xs text-muted-foreground">
+              × {formatQuantity(volume)} = {formatCurrency(total)}
+            </span>
+          </p>
+        ) : null}
+      </div>
+
+      {lines.length === 0 ? (
+        <p className="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
+          Belum ada baris pada {ESTIMATE_TYPE_LABELS[estimateType]}.
+        </p>
+      ) : null}
+
+      {AHSP_ROLE_ORDER.map((role) => {
+        const roleLines = byRole.get(role) ?? [];
+        if (roleLines.length === 0) return null;
+
+        return (
+          <div key={role} className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium">
+                {AHSP_ROLE_LABELS[role]}
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  {roleLines.length} baris
+                </span>
+              </h4>
+              {canEdit ? (
+                <Button variant="ghost" size="sm" onClick={() => onAdd(role)}>
+                  <Plus className="size-4" aria-hidden />
+                  Tambah baris
+                </Button>
+              ) : null}
+            </div>
+
+            <div className="w-full rounded-lg border">
+              <Table className="min-w-max">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-20">Kode</TableHead>
+                    <TableHead className="min-w-48">Uraian</TableHead>
+                    <TableHead className="w-16">Sat</TableHead>
+                    <TableHead className="w-24 text-right">Koef</TableHead>
+                    <TableHead className="w-20 text-right">Susut</TableHead>
+                    <TableHead className="w-28 text-right">Kebutuhan</TableHead>
+                    {showCosts ? <TableHead className="w-32 text-right">Harga</TableHead> : null}
+                    {showCosts ? <TableHead className="w-36 text-right">Jumlah</TableHead> : null}
+                    {canEdit ? <TableHead className="w-10" /> : null}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {roleLines.map((line) => (
+                    <TableRow
+                      key={line.id}
+                      className={canEdit ? 'cursor-pointer' : undefined}
+                      onClick={canEdit ? () => onEdit(line) : undefined}
+                    >
+                      <TableCell className="font-mono text-xs">{line.resourceCode}</TableCell>
+                      <TableCell>
+                        {line.resourceName}
+                        {line.resourceSpec ? (
+                          <span className="block text-xs text-muted-foreground">
+                            {line.resourceSpec}
+                          </span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{line.unitCode}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">
+                        {formatCoefficient(line.coef)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
+                        {Number(line.wasteFactor) === 0
+                          ? EMPTY_VALUE
+                          : formatPercent(line.wasteFactor, 1)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">
+                        {formatQuantity(line.qty)}
+                      </TableCell>
+                      {showCosts ? (
+                        <TableCell className="text-right font-mono tabular-nums">
+                          {line.price === null ? (
+                            <span className="text-destructive">{EMPTY_VALUE}</span>
+                          ) : (
+                            formatCurrency(line.price)
+                          )}
+                        </TableCell>
+                      ) : null}
+                      {showCosts ? (
+                        <TableCell className="text-right font-mono tabular-nums">
+                          {line.amount === null ? (
+                            <span className="text-destructive">{EMPTY_VALUE}</span>
+                          ) : (
+                            formatCurrency(line.amount)
+                          )}
+                        </TableCell>
+                      ) : null}
+                      {canEdit ? (
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Hapus ${line.resourceName} dari ${ESTIMATE_TYPE_LABELS[estimateType]}`}
+                            disabled={pending}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRemove(line);
+                            }}
+                          >
+                            <Trash2 className="size-4" aria-hidden />
+                          </Button>
+                        </TableCell>
+                      ) : null}
+                    </TableRow>
+                  ))}
+                </TableBody>
+
+                {/*
+                  The subtotal sits under the column it sums instead of
+                  floating as a line of prose beneath the table — that is
+                  where a reader checking an AHSP sheet looks for it.
+                */}
+                {showCosts ? (
+                  <TableFooter>
+                    <TableRow>
+                      <TableCell colSpan={6}>Jumlah {AHSP_ROLE_LABELS[role]}</TableCell>
+                      <TableCell />
+                      <TableCell className="text-right font-mono font-medium tabular-nums">
+                        {formatCurrency(subtotals[role])}
+                      </TableCell>
+                      {canEdit ? <TableCell /> : null}
+                    </TableRow>
+                  </TableFooter>
+                ) : null}
+              </Table>
+            </div>
+          </div>
+        );
+      })}
+
+      {/*
+        Empty sections collapse into one row of buttons instead of five dashed
+        boxes. On an analysis with nothing in it yet the old layout was almost
+        entirely empty placeholders, which buried the sections that did have
+        content.
+      */}
+      {canEdit && emptyRoles.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed px-3 py-2">
+          <span className="text-xs text-muted-foreground">Bagian yang belum diisi:</span>
+          {emptyRoles.map((role) => (
+            <Button key={role} variant="ghost" size="sm" onClick={() => onAdd(role)}>
+              <Plus className="size-3.5" aria-hidden />
+              {AHSP_ROLE_LABELS[role]}
+            </Button>
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

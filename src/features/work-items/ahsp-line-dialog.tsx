@@ -28,6 +28,8 @@ import {
   AHSP_ROLE_LABELS,
   AHSP_ROLE_ORDER,
   ahspLineFormSchema,
+  ESTIMATE_TYPE_CAPTIONS,
+  ESTIMATE_TYPE_LABELS,
   type AhspLineFormInput,
   type AhspLineFormValues,
 } from '@/lib/validation/work-breakdown';
@@ -41,6 +43,7 @@ export function AhspLineDialog({
   workItemId,
   lineId,
   defaultRole,
+  defaultEstimateType,
   defaultValues,
   resources,
 }: {
@@ -50,6 +53,7 @@ export function AhspLineDialog({
   workItemId: string;
   lineId: string | null;
   defaultRole: AhspLineFormInput['role'];
+  defaultEstimateType: AhspLineFormInput['estimateType'];
   defaultValues?: AhspLineFormInput;
   resources: { id: string; code: string; name: string; spec: string | null; unitCode: string }[];
 }) {
@@ -58,7 +62,11 @@ export function AhspLineDialog({
 
   const form = useForm<AhspLineFormInput, unknown, AhspLineFormValues>({
     resolver: zodResolver(ahspLineFormSchema),
-    defaultValues: defaultValues ?? { ...AHSP_LINE_FORM_DEFAULTS, role: defaultRole },
+    defaultValues: defaultValues ?? {
+      ...AHSP_LINE_FORM_DEFAULTS,
+      role: defaultRole,
+      estimateType: defaultEstimateType,
+    },
     mode: 'onBlur',
   });
 
@@ -68,7 +76,6 @@ export function AhspLineDialog({
     handleSubmit,
     setError,
     watch,
-    setValue,
     formState: { errors, isSubmitting },
   } = form;
 
@@ -161,42 +168,42 @@ export function AhspLineDialog({
             )}
           />
 
-          <SelectField
-            id="role"
-            label="Bagian analisa"
-            error={messageOf('role')}
-            registration={register('role')}
-            options={AHSP_ROLE_ORDER.map((role) => ({ value: role, label: AHSP_ROLE_LABELS[role] }))}
-          />
-
           <div className="grid gap-4 sm:grid-cols-2">
-            <TextField
-              id="coefRap"
-              label="Koefisien RAP"
-              inputMode="decimal"
-              hint="Koefisien pelaksanaan."
-              error={messageOf('coefRap')}
-              registration={register('coefRap')}
+            {/*
+              Which analysis this line belongs to. The two are separate
+              documents now, so a line lands in one of them rather than
+              carrying a coefficient for each.
+            */}
+            <SelectField
+              id="estimateType"
+              label="Jenis analisa"
+              error={messageOf('estimateType')}
+              registration={register('estimateType')}
+              options={(['RAB', 'RAP'] as const).map((type) => ({
+                value: type,
+                label: ESTIMATE_TYPE_LABELS[type],
+              }))}
             />
-            <TextField
-              id="coefRab"
-              label="Koefisien RAB"
-              inputMode="decimal"
-              hint="Kosongkan sama dengan RAP bila tidak dibedakan."
-              error={messageOf('coefRab')}
-              registration={register('coefRab')}
+            <SelectField
+              id="role"
+              label="Bagian analisa"
+              error={messageOf('role')}
+              registration={register('role')}
+              options={AHSP_ROLE_ORDER.map((role) => ({
+                value: role,
+                label: AHSP_ROLE_LABELS[role],
+              }))}
             />
           </div>
 
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="-mt-2"
-            onClick={() => setValue('coefRab', watch('coefRap'), { shouldValidate: true })}
-          >
-            Samakan koefisien RAB dengan RAP
-          </Button>
+          <TextField
+            id="coef"
+            label="Koefisien"
+            inputMode="decimal"
+            hint={ESTIMATE_TYPE_CAPTIONS[watch('estimateType') ?? 'RAB']}
+            error={messageOf('coef')}
+            registration={register('coef')}
+          />
 
           <TextField
             id="wasteFactor"

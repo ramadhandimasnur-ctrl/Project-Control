@@ -12,7 +12,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { coefficient, day, money, percent, primaryId, quantity } from './_shared';
-import { ahspRoleEnum, progressMethodEnum } from './enums';
+import { ahspRoleEnum, priceTypeEnum, progressMethodEnum } from './enums';
 import { auditColumns } from './org';
 import { projects } from './projects';
 import { resources, units } from './resources';
@@ -141,21 +141,33 @@ export const workItemResources = pgTable(
       .notNull()
       .references(() => resources.id, { onDelete: 'restrict' }),
     role: ahspRoleEnum('role').notNull(),
-    coefRab: coefficient('coef_rab').notNull().default('0'),
-    coefRap: coefficient('coef_rap').notNull().default('0'),
+    /*
+     * Which analysis this line belongs to.
+     *
+     * The two used to share a row, one coefficient each. That forced both
+     * analyses to name the same resources: a RAP that substituted a ready-mix
+     * supplier for site-batched cement had to be written as a cement line with
+     * a zero coefficient plus a ready-mix line the budget did not want, and the
+     * printed RAB then carried a row that contributed nothing. Splitting them
+     * lets each analysis hold exactly the resources it actually uses.
+     */
+    estimateType: priceTypeEnum('estimate_type').notNull(),
+    coef: coefficient('coef').notNull().default('0'),
     wasteFactor: percent('waste_factor').notNull().default('0'),
     note: text('note'),
     sortOrder: integer('sort_order').notNull().default(0),
     ...auditColumns(),
   },
   (t) => [
-    uniqueIndex('work_item_resources_unique').on(t.workItemId, t.resourceId, t.role),
+    uniqueIndex('work_item_resources_unique').on(
+      t.workItemId,
+      t.estimateType,
+      t.resourceId,
+      t.role,
+    ),
     index('work_item_resources_work_item_idx').on(t.workItemId),
     index('work_item_resources_resource_idx').on(t.resourceId),
-    check(
-      'work_item_resources_nonneg',
-      sql`${t.coefRab} >= 0 AND ${t.coefRap} >= 0 AND ${t.wasteFactor} >= 0`,
-    ),
+    check('work_item_resources_nonneg', sql`${t.coef} >= 0 AND ${t.wasteFactor} >= 0`),
   ],
 );
 

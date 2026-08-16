@@ -84,8 +84,8 @@ export async function saveTemplateFromWorkItem(
     .select({
       resourceId: workItemResources.resourceId,
       role: workItemResources.role,
-      coefRab: workItemResources.coefRab,
-      coefRap: workItemResources.coefRap,
+      estimateType: workItemResources.estimateType,
+      coef: workItemResources.coef,
       wasteFactor: workItemResources.wasteFactor,
     })
     .from(workItemResources)
@@ -129,8 +129,8 @@ export async function saveTemplateFromWorkItem(
         templateId: created.id,
         resourceId: line.resourceId,
         role: line.role,
-        coefRab: line.coefRab,
-        coefRap: line.coefRap,
+        estimateType: line.estimateType,
+        coef: line.coef,
         wasteFactor: line.wasteFactor,
         createdBy: user.id,
         updatedBy: user.id,
@@ -196,8 +196,8 @@ export async function applyTemplate(
     .select({
       resourceId: ahspTemplateResources.resourceId,
       role: ahspTemplateResources.role,
-      coefRab: ahspTemplateResources.coefRab,
-      coefRap: ahspTemplateResources.coefRap,
+      estimateType: ahspTemplateResources.estimateType,
+      coef: ahspTemplateResources.coef,
       wasteFactor: ahspTemplateResources.wasteFactor,
     })
     .from(ahspTemplateResources)
@@ -240,8 +240,8 @@ export async function applyTemplate(
           workItemId,
           resourceId: line.resourceId,
           role: line.role,
-          coefRab: line.coefRab,
-          coefRap: line.coefRap,
+          estimateType: line.estimateType,
+          coef: line.coef,
           wasteFactor: line.wasteFactor,
           sortOrder: index,
           createdBy: user.id,
@@ -308,8 +308,8 @@ export async function getTemplateLines(userId: string, templateId: string) {
       resourceName: resources.name,
       unitCode: units.code,
       role: ahspTemplateResources.role,
-      coefRab: ahspTemplateResources.coefRab,
-      coefRap: ahspTemplateResources.coefRap,
+      estimateType: ahspTemplateResources.estimateType,
+      coef: ahspTemplateResources.coef,
       wasteFactor: ahspTemplateResources.wasteFactor,
     })
     .from(ahspTemplateResources)

@@ -209,10 +209,18 @@
     overflow: visible !important;
   }
 
-  /* Recap tables carry a dozen columns; paper is 210mm wide. */
+  /*
+   * Recap tables carry a dozen columns; paper is 210mm wide.
+   *
+   * `min-width` is what lets a dense table scroll rather than squash on
+   * screen. A sheet has nowhere to scroll, so the same rule would push the
+   * right-hand columns off the page entirely — release it here and let the
+   * table fit the paper.
+   */
   table {
     font-size: 9pt;
     table-layout: auto;
+    min-width: 0 !important;
   }
 
   th,

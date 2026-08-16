@@ -24,6 +24,7 @@ import { resolvePriceMap, type MissingPrice } from './prices';
 import { type SessionUser } from './session';
 
 export type AhspRole = 'LABOR' | 'MATERIAL' | 'EQUIPMENT' | 'SUBCON' | 'PACKAGE';
+export type EstimateType = 'RAB' | 'RAP';
 
 export type AhspLineView = {
   id: string;
@@ -32,20 +33,18 @@ export type AhspLineView = {
   resourceName: string;
   resourceSpec: string | null;
   unitCode: string;
+  /** Which of the two analyses this line belongs to. */
+  estimateType: EstimateType;
   role: AhspRole;
-  coefRab: string;
-  coefRap: string;
+  coef: string;
   wasteFactor: string;
   note: string | null;
   sortOrder: number;
   /** null when the price book has no entry in force — rendered as "—". */
-  priceRab: string | null;
-  priceRap: string | null;
+  price: string | null;
   /** volume x coefficient x (1 + waste): what must actually be procured. */
-  qtyRab: string | null;
-  qtyRap: string | null;
-  amountRab: string | null;
-  amountRap: string | null;
+  qty: string;
+  amount: string | null;
 };
 
 export type WorkItemEstimateView = {
@@ -61,8 +60,8 @@ export type WorkItemEstimateView = {
   margin: string;
   marginPercent: string | null;
   estimateSpread: string;
-  /** Subtotals per AHSP section, for the footer. */
-  subtotalsRap: Record<AhspRole, string>;
+  /** Subtotals per AHSP section, per analysis, for the two footers. */
+  subtotals: Record<EstimateType, Record<AhspRole, string>>;
   lines: AhspLineView[];
   missingPrices: MissingPrice[];
 };
@@ -118,9 +117,9 @@ export async function getWorkItemEstimate(
       resourceName: resources.name,
       resourceSpec: resources.spec,
       unitCode: units.code,
+      estimateType: workItemResources.estimateType,
       role: workItemResources.role,
-      coefRab: workItemResources.coefRab,
-      coefRap: workItemResources.coefRap,
+      coef: workItemResources.coef,
       wasteFactor: workItemResources.wasteFactor,
       note: workItemResources.note,
       sortOrder: workItemResources.sortOrder,
@@ -132,12 +131,20 @@ export async function getWorkItemEstimate(
     .orderBy(asc(workItemResources.sortOrder), asc(resources.code));
 
   const showCosts = await canViewOrgCosts(userId);
-  const resourceIds = rows.map((r) => r.resourceId);
+
+  /*
+   * Each analysis asks only for the prices its own lines need. Asking both
+   * books for every resource would report a missing RAP price for a material
+   * that only the budget analysis names — a warning about a gap that does not
+   * exist, on a total that is in fact complete.
+   */
+  const idsOf = (type: EstimateType) =>
+    rows.filter((r) => r.estimateType === type).map((r) => r.resourceId);
 
   const [rab, rap] = showCosts
     ? await Promise.all([
-        resolvePriceMap(resourceIds, projectId, 'RAB', onDate),
-        resolvePriceMap(resourceIds, projectId, 'RAP', onDate),
+        resolvePriceMap(idsOf('RAB'), projectId, 'RAB', onDate),
+        resolvePriceMap(idsOf('RAP'), projectId, 'RAP', onDate),
       ])
     : [
         { resolved: new Map(), missing: [] as MissingPrice[] },
@@ -150,28 +157,29 @@ export async function getWorkItemEstimate(
   const wasteMultiplier = (waste: string) => toDecimal(1).plus(toDecimal(waste));
 
   const lines: AhspLineView[] = rows.map((row) => {
-    const priceRab = rab.resolved.get(row.resourceId)?.price ?? null;
-    const priceRap = rap.resolved.get(row.resourceId)?.price ?? null;
-
-    const qRab = volume.times(toDecimal(row.coefRab)).times(wasteMultiplier(row.wasteFactor));
-    const qRap = volumeRap.times(toDecimal(row.coefRap)).times(wasteMultiplier(row.wasteFactor));
+    const book = row.estimateType === 'RAB' ? rab : rap;
+    const price = book.resolved.get(row.resourceId)?.price ?? null;
+    const onVolume = row.estimateType === 'RAB' ? volume : volumeRap;
+    const qty = onVolume.times(toDecimal(row.coef)).times(wasteMultiplier(row.wasteFactor));
 
     return {
       ...row,
-      priceRab: priceRab?.toFixed(2) ?? null,
-      priceRap: priceRap?.toFixed(2) ?? null,
-      qtyRab: qRab.toFixed(4),
-      qtyRap: qRap.toFixed(4),
-      amountRab: priceRab === null ? null : qRab.times(priceRab).toFixed(2),
-      amountRap: priceRap === null ? null : qRap.times(priceRap).toFixed(2),
+      price: price?.toFixed(2) ?? null,
+      qty: qty.toFixed(4),
+      amount: price === null ? null : qty.times(price).toFixed(2),
     };
   });
 
-  // A line with no price contributes nothing rather than blocking the total;
-  // `missingPrices` is what tells the user the total is incomplete.
+  /*
+   * A line now belongs to one analysis, so it contributes to one side and
+   * zero to the other — which is exactly what a zero coefficient has always
+   * meant to `lib/calc/estimate`. A line with no price contributes nothing
+   * rather than blocking the total; `missingPrices` is what tells the user the
+   * total is incomplete.
+   */
   const estimateLines: EstimateLine[] = rows.map((row) => ({
-    coefRab: row.coefRab,
-    coefRap: row.coefRap,
+    coefRab: row.estimateType === 'RAB' ? row.coef : '0',
+    coefRap: row.estimateType === 'RAP' ? row.coef : '0',
     wasteFactor: row.wasteFactor,
     priceRab: rab.resolved.get(row.resourceId)?.price ?? 0,
     priceRap: rap.resolved.get(row.resourceId)?.price ?? 0,
@@ -187,12 +195,14 @@ export async function getWorkItemEstimate(
     directUnitRap: item.unitPriceRap,
   });
 
-  const subtotalsRap = EMPTY_SUBTOTALS();
+  const subtotals: Record<EstimateType, Record<AhspRole, string>> = {
+    RAB: EMPTY_SUBTOTALS(),
+    RAP: EMPTY_SUBTOTALS(),
+  };
   for (const line of lines) {
-    if (line.amountRap === null) continue;
-    subtotalsRap[line.role] = toDecimal(subtotalsRap[line.role])
-      .plus(line.amountRap)
-      .toFixed(2);
+    if (line.amount === null) continue;
+    const bucket = subtotals[line.estimateType];
+    bucket[line.role] = toDecimal(bucket[line.role]).plus(line.amount).toFixed(2);
   }
 
   // Only price types actually in use are reported as missing.
@@ -210,9 +220,185 @@ export async function getWorkItemEstimate(
     margin: estimate.margin.toFixed(2),
     marginPercent: estimate.marginPercent?.toFixed(6) ?? null,
     estimateSpread: estimate.estimateSpread.toFixed(2),
-    subtotalsRap,
+    subtotals,
     lines,
     missingPrices: missing,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Both analyses of many work items, for printing
+// ---------------------------------------------------------------------------
+
+export type WorkItemAnalyses = {
+  workItemId: string;
+  code: string;
+  name: string;
+  spec: string | null;
+  unitCode: string;
+  groupName: string | null;
+  volume: string;
+  volumeRap: string;
+  unitCostRab: string;
+  unitCostRap: string;
+  totalRab: string;
+  totalRap: string;
+  subtotals: Record<EstimateType, Record<AhspRole, string>>;
+  lines: AhspLineView[];
+};
+
+/**
+ * Every work item's two analyses, in four queries rather than four per item.
+ *
+ * The print sheet needs the whole book at once. Calling `getWorkItemEstimate`
+ * in a loop would issue a couple of hundred round trips for a project of any
+ * size, and a document that takes a minute to open is a document nobody prints.
+ */
+export async function listWorkItemAnalyses(
+  userId: string,
+  projectId: string,
+  options: { workItemId?: string | undefined } = {},
+  onDate: string = todayIso(),
+): Promise<{ items: WorkItemAnalyses[]; showCosts: boolean }> {
+  await assertProjectAccess(userId, projectId, 'VIEWER');
+
+  const items = await db
+    .select({
+      id: workItems.id,
+      code: workItems.code,
+      name: workItems.name,
+      spec: workItems.spec,
+      groupName: workGroups.name,
+      unitCode: units.code,
+      volume: workItems.volume,
+      volumeRap: workItems.volumeRap,
+      unitPriceRab: workItems.unitPriceRab,
+      unitPriceRap: workItems.unitPriceRap,
+    })
+    .from(workItems)
+    .innerJoin(units, eq(units.id, workItems.unitId))
+    .leftJoin(workGroups, eq(workGroups.id, workItems.groupId))
+    .where(
+      options.workItemId === undefined
+        ? and(eq(workItems.projectId, projectId), eq(workItems.isActive, true))
+        : and(eq(workItems.projectId, projectId), eq(workItems.id, options.workItemId)),
+    )
+    .orderBy(asc(workItems.sortOrder), asc(workItems.code));
+
+  const showCosts = await canViewOrgCosts(userId);
+  const itemIds = items.map((i) => i.id);
+
+  const rows =
+    itemIds.length === 0
+      ? []
+      : await db
+          .select({
+            id: workItemResources.id,
+            workItemId: workItemResources.workItemId,
+            resourceId: workItemResources.resourceId,
+            resourceCode: resources.code,
+            resourceName: resources.name,
+            resourceSpec: resources.spec,
+            unitCode: units.code,
+            estimateType: workItemResources.estimateType,
+            role: workItemResources.role,
+            coef: workItemResources.coef,
+            wasteFactor: workItemResources.wasteFactor,
+            note: workItemResources.note,
+            sortOrder: workItemResources.sortOrder,
+          })
+          .from(workItemResources)
+          .innerJoin(resources, eq(resources.id, workItemResources.resourceId))
+          .innerJoin(units, eq(units.id, resources.unitId))
+          .where(inArray(workItemResources.workItemId, itemIds))
+          .orderBy(asc(workItemResources.sortOrder), asc(resources.code));
+
+  const idsOf = (type: EstimateType) => [
+    ...new Set(rows.filter((r) => r.estimateType === type).map((r) => r.resourceId)),
+  ];
+
+  const [rab, rap] = showCosts
+    ? await Promise.all([
+        resolvePriceMap(idsOf('RAB'), projectId, 'RAB', onDate),
+        resolvePriceMap(idsOf('RAP'), projectId, 'RAP', onDate),
+      ])
+    : [
+        { resolved: new Map(), missing: [] as MissingPrice[] },
+        { resolved: new Map(), missing: [] as MissingPrice[] },
+      ];
+
+  const rowsByItem = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const list = rowsByItem.get(row.workItemId) ?? [];
+    list.push(row);
+    rowsByItem.set(row.workItemId, list);
+  }
+
+  const wasteMultiplier = (waste: string) => toDecimal(1).plus(toDecimal(waste));
+
+  return {
+    showCosts,
+    items: items.map((item) => {
+      const itemRows = rowsByItem.get(item.id) ?? [];
+      const volume = toDecimal(item.volume);
+      const volumeRap = item.volumeRap === null ? volume : toDecimal(item.volumeRap);
+
+      const lines: AhspLineView[] = itemRows.map((row) => {
+        const book = row.estimateType === 'RAB' ? rab : rap;
+        const price = book.resolved.get(row.resourceId)?.price ?? null;
+        const onVolume = row.estimateType === 'RAB' ? volume : volumeRap;
+        const qty = onVolume.times(toDecimal(row.coef)).times(wasteMultiplier(row.wasteFactor));
+
+        return {
+          ...row,
+          price: price?.toFixed(2) ?? null,
+          qty: qty.toFixed(4),
+          amount: price === null ? null : qty.times(price).toFixed(2),
+        };
+      });
+
+      const estimate = estimateWorkItem({
+        volume: item.volume,
+        volumeRap: item.volumeRap,
+        lines: itemRows.map((row) => ({
+          coefRab: row.estimateType === 'RAB' ? row.coef : '0',
+          coefRap: row.estimateType === 'RAP' ? row.coef : '0',
+          wasteFactor: row.wasteFactor,
+          priceRab: rab.resolved.get(row.resourceId)?.price ?? 0,
+          priceRap: rap.resolved.get(row.resourceId)?.price ?? 0,
+        })),
+        contractUnitPrice: null,
+        directUnitRab: item.unitPriceRab,
+        directUnitRap: item.unitPriceRap,
+      });
+
+      const subtotals: Record<EstimateType, Record<AhspRole, string>> = {
+        RAB: EMPTY_SUBTOTALS(),
+        RAP: EMPTY_SUBTOTALS(),
+      };
+      for (const line of lines) {
+        if (line.amount === null) continue;
+        const bucket = subtotals[line.estimateType];
+        bucket[line.role] = toDecimal(bucket[line.role]).plus(line.amount).toFixed(2);
+      }
+
+      return {
+        workItemId: item.id,
+        code: item.code,
+        name: item.name,
+        spec: item.spec,
+        unitCode: item.unitCode,
+        groupName: item.groupName,
+        volume: item.volume,
+        volumeRap: volumeRap.toString(),
+        unitCostRab: estimate.unitCostRab.toFixed(2),
+        unitCostRap: estimate.unitCostRap.toFixed(2),
+        totalRab: estimate.totalRab.toFixed(2),
+        totalRap: estimate.totalRap.toFixed(2),
+        subtotals,
+        lines,
+      };
+    }),
   };
 }
 
@@ -336,20 +522,22 @@ export async function getProjectEstimate(
           .select({
             workItemId: workItemResources.workItemId,
             resourceId: workItemResources.resourceId,
-            coefRab: workItemResources.coefRab,
-            coefRap: workItemResources.coefRap,
+            estimateType: workItemResources.estimateType,
+            coef: workItemResources.coef,
             wasteFactor: workItemResources.wasteFactor,
           })
           .from(workItemResources)
           .where(inArray(workItemResources.workItemId, itemIds));
 
   const showCosts = await canViewOrgCosts(userId);
-  const resourceIds = [...new Set(lines.map((l) => l.resourceId))];
+  const idsOf = (type: EstimateType) => [
+    ...new Set(lines.filter((l) => l.estimateType === type).map((l) => l.resourceId)),
+  ];
 
   const [rab, rap] = showCosts
     ? await Promise.all([
-        resolvePriceMap(resourceIds, projectId, 'RAB', onDate),
-        resolvePriceMap(resourceIds, projectId, 'RAP', onDate),
+        resolvePriceMap(idsOf('RAB'), projectId, 'RAB', onDate),
+        resolvePriceMap(idsOf('RAP'), projectId, 'RAP', onDate),
       ])
     : [
         { resolved: new Map(), missing: [] as MissingPrice[] },
@@ -369,8 +557,8 @@ export async function getProjectEstimate(
       volume: item.volume,
       volumeRap: item.volumeRap,
       lines: itemLines.map((l) => ({
-        coefRab: l.coefRab,
-        coefRap: l.coefRap,
+        coefRab: l.estimateType === 'RAB' ? l.coef : '0',
+        coefRap: l.estimateType === 'RAP' ? l.coef : '0',
         wasteFactor: l.wasteFactor,
         priceRab: rab.resolved.get(l.resourceId)?.price ?? 0,
         priceRap: rap.resolved.get(l.resourceId)?.price ?? 0,
@@ -473,6 +661,7 @@ export async function saveAhspLine(
     .where(
       and(
         eq(workItemResources.workItemId, workItemId),
+        eq(workItemResources.estimateType, values.estimateType),
         eq(workItemResources.resourceId, values.resourceId),
         eq(workItemResources.role, values.role),
       ),
@@ -481,8 +670,8 @@ export async function saveAhspLine(
 
   if (duplicate && duplicate.id !== lineId) {
     throw conflict(
-      'Sumber daya ini sudah ada pada bagian analisa yang sama.',
-      'Ubah koefisien baris yang sudah ada, atau pilih bagian analisa lain.',
+      'Sumber daya ini sudah ada pada bagian yang sama di analisa ini.',
+      'Ubah koefisien baris yang sudah ada, pilih bagian analisa lain, atau catat pada jenis analisa yang satunya.',
     );
   }
 
