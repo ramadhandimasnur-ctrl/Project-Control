@@ -172,9 +172,18 @@ test('markup yang diketik mengisi harga RAB di baris katalog', async ({ page }) 
   const markup = row.getByLabel(/^Markup /);
 
   const rapBefore = await rap.inputValue();
-  await markup.fill('10');
 
-  expect(Number(await rab.inputValue())).toBeCloseTo(Number(rapBefore) * 1.1, 2);
+  /*
+   * A markup the row does not already carry. Typing back the stored figure
+   * changes nothing, so every assertion below would pass on a page where the
+   * binding had been ripped out entirely — the first version of this test did
+   * exactly that and only the save button noticed.
+   */
+  const typed = (await markup.inputValue()).trim() === '17.5' ? '12.5' : '17.5';
+  await markup.fill(typed);
+
+  const expected = Number(rapBefore) * (1 + Number(typed) / 100);
+  expect(Number(await rab.inputValue())).toBeCloseTo(expected, 2);
   // The execution cost is authoritative and must survive the edit untouched.
   await expect(rap).toHaveValue(rapBefore);
 
