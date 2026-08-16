@@ -5,7 +5,7 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db';
 import { withUser } from '@/db/context';
 import { projects, resources, units, workGroups, workItemResources, workItems } from '@/db/schema';
-import { type Decimal, toDecimal } from '@/lib/calc/decimal';
+import { type Decimal, safeDivide, toDecimal } from '@/lib/calc/decimal';
 import { estimateWorkItem, type EstimateLine } from '@/lib/calc/estimate';
 import {
   computeWeights,
@@ -241,6 +241,15 @@ export type ProjectEstimateItem = {
   margin: string;
   marginPercent: string | null;
   weight: string;
+  /**
+   * Share of the project's total RAB.
+   *
+   * Distinct from `weight`, which follows whatever basis the project measures
+   * progress on. This one answers a different question — how much of the budget
+   * this line accounts for — so it includes items excluded from progress weight
+   * and reconciles with the RAB column beside it.
+   */
+  weightRab: string;
   lineCount: number;
 };
 
@@ -406,6 +415,7 @@ export async function getProjectEstimate(
       margin: estimate.margin.toFixed(2),
       marginPercent: estimate.marginPercent?.toFixed(6) ?? null,
       weight: (weights.get(item.id) ?? toDecimal(0)).toFixed(6),
+      weightRab: (safeDivide(estimate.totalRab, totalRab) ?? toDecimal(0)).toFixed(6),
       lineCount,
     })),
     totals: {

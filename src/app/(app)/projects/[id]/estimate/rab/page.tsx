@@ -60,7 +60,7 @@ export default async function RabPage({ params }: { params: Promise<{ id: string
     <div className="space-y-6 p-6">
       <PageHeader
         title="RAB — Rencana Anggaran Biaya"
-        description={`Nilai pekerjaan dan bobotnya. Bobot progres dihitung atas dasar ${WEIGHT_BASIS_LABELS[estimate.weightBasis]}.`}
+        description="Anggaran tiap pekerjaan dan porsinya terhadap anggaran proyek."
       />
 
       {/* Design decision 1: the gap is shown with its figures, never absorbed. */}
@@ -114,8 +114,13 @@ export default async function RabPage({ params }: { params: Promise<{ id: string
                   <TableHead className="w-16">Sat</TableHead>
                   <TableHead className="w-32 text-right">HS RAB</TableHead>
                   <TableHead className="w-36 text-right">Total RAB</TableHead>
-                  <TableHead className="w-36 text-right">Nilai kontrak</TableHead>
-                  <TableHead className="w-20 text-right">Bobot</TableHead>
+                  {/*
+                    The contract value per line is deliberately absent. It is
+                    the revenue figure, it lives on the estimate summary and in
+                    the reconciliation above, and beside a RAB column it invited
+                    the two to be read as one number.
+                  */}
+                  <TableHead className="w-24 text-right">Bobot RAB</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -157,11 +162,8 @@ export default async function RabPage({ params }: { params: Promise<{ id: string
                     <TableCell className="text-right font-mono tabular-nums">
                       {formatCurrency(item.totalRab)}
                     </TableCell>
-                    <TableCell className="text-right font-mono font-medium tabular-nums">
-                      {formatCurrency(item.contractValue)}
-                    </TableCell>
                     <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
-                      {formatPercent(item.weight)}
+                      {formatPercent(item.weightRab)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -173,9 +175,6 @@ export default async function RabPage({ params }: { params: Promise<{ id: string
                     {formatCurrency(totals.totalRab)}
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">
-                    {formatCurrency(totals.contractValue)}
-                  </TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">
                     {formatPercent(1)}
                   </TableCell>
                 </TableRow>
@@ -184,10 +183,14 @@ export default async function RabPage({ params }: { params: Promise<{ id: string
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Harga satuan kontrak per pekerjaan adalah otoritas pendapatan. Pekerjaan yang belum
-            punya harga kontrak memakai RAB dikali markup proyek sebagai nilai sementara, sehingga
-            angkanya tetap terbentuk tanpa mengarang harga. Margin dan biaya pelaksanaan ada di
-            halaman RAP.
+            Kolom <strong>Bobot RAB</strong> adalah porsi Total RAB pekerjaan terhadap Total RAB
+            proyek, sehingga dapat dijumlahkan lurus ke bawah bersama kolom di sebelahnya.
+            {estimate.weightBasis === 'RAB'
+              ? ' Proyek ini juga memakai RAB sebagai dasar bobot progres, jadi angkanya sama dengan bobot di papan progres.'
+              : ` Bobot progres proyek ini dihitung atas dasar ${WEIGHT_BASIS_LABELS[estimate.weightBasis]}, jadi angkanya dapat berbeda dari kolom ini; yang dipakai papan progres adalah yang itu.`}{' '}
+            Nilai kontrak per pekerjaan tidak lagi ditampilkan di tabel ini — totalnya ada di
+            ringkasan atas, dan selisihnya terhadap nilai kontrak proyek dilaporkan di sana. Margin
+            dan biaya pelaksanaan ada di halaman RAP.
           </p>
         </>
       )}
