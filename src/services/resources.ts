@@ -33,6 +33,16 @@ export type ResourceListItem = {
   unitCode: string;
   categoryName: string | null;
   isActive: boolean;
+  /*
+   * The raw foreign keys and the remaining editable fields travel with the row
+   * so the list can open an edit dialog already filled in. Fetching them again
+   * per row on click would be a request per pencil click, and prefilling from
+   * the display names would guess at ids.
+   */
+  unitId: string;
+  categoryId: string | null;
+  leadTimeDays: number;
+  notes: string | null;
   /** null means the price book has no entry in force — shown as "—". */
   priceRab: string | null;
   priceRap: string | null;
@@ -99,6 +109,10 @@ export async function listResources(
       isActive: resources.isActive,
       unitCode: units.code,
       categoryName: resourceCategories.name,
+      unitId: resources.unitId,
+      categoryId: resources.categoryId,
+      leadTimeDays: resources.leadTimeDays,
+      notes: resources.notes,
     })
     .from(resources)
     .innerJoin(units, eq(units.id, resources.unitId))
@@ -375,6 +389,51 @@ export async function deleteResource(user: SessionUser, resourceId: string): Pro
 
     await tx.delete(resources).where(eq(resources.id, resourceId));
   });
+}
+
+export type BulkDeleteResult = {
+  deleted: number;
+  /** Each refusal keeps the reason, so the user learns which and why. */
+  refused: { id: string; name: string; reason: string }[];
+};
+
+/**
+ * Deletes several resources, keeping the guardrail on every one of them.
+ *
+ * Sequential rather than a single `DELETE ... WHERE id IN (…)`: the rule is
+ * per-resource, and one statement would either take the lot or refuse the lot.
+ * A user who selected forty rows and had one of them in use should lose the
+ * one, not the operation — and should be told which one.
+ */
+export async function deleteManyResources(
+  user: SessionUser,
+  resourceIds: readonly string[],
+): Promise<BulkDeleteResult> {
+  await assertOrgAccess(user.id, 'ADMIN');
+
+  const refused: BulkDeleteResult['refused'] = [];
+  let deleted = 0;
+
+  for (const resourceId of resourceIds) {
+    try {
+      await deleteResource(user, resourceId);
+      deleted += 1;
+    } catch (error) {
+      const [row] = await db
+        .select({ name: resources.name })
+        .from(resources)
+        .where(eq(resources.id, resourceId))
+        .limit(1);
+
+      refused.push({
+        id: resourceId,
+        name: row?.name ?? resourceId,
+        reason: error instanceof Error ? error.message : 'Gagal dihapus.',
+      });
+    }
+  }
+
+  return { deleted, refused };
 }
 
 async function assertCodeAvailable(

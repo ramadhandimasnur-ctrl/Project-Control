@@ -1,26 +1,16 @@
 import { FileSpreadsheet, PackageSearch } from 'lucide-react';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
-import { Badge } from '@/components/ui/badge';
 import { ButtonLink } from '@/components/ui/button';
 import { ResourceCreateButton } from '@/features/master-data/resource-create-button';
+import { ResourcesTable } from '@/features/master-data/resources-table';
 import { assertOrgAccess } from '@/services/org-access';
-import { listUnits } from '@/services/units';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { EMPTY_VALUE, formatCurrency } from '@/lib/format';
 import { listCategories } from '@/services/resource-categories';
 import { listResources, type ResourceType } from '@/services/resources';
 import { requireSessionUser } from '@/services/session';
+import { listUnits } from '@/services/units';
 
 import { ResourceFilters } from './resource-filters';
 import { ResourcePagination } from './resource-pagination';
@@ -69,7 +59,6 @@ export default async function ResourcesPage({
   ]);
 
   const canManage = access.globalRole === 'ADMIN';
-
   const filtered = search !== '' || type !== undefined || params.category !== undefined;
 
   return (
@@ -111,70 +100,29 @@ export default async function ResourcesPage({
         />
       ) : (
         <>
-          <div className="overflow-x-auto rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-24">Kode</TableHead>
-                  <TableHead>Uraian</TableHead>
-                  <TableHead className="w-20">Satuan</TableHead>
-                  <TableHead className="w-28">Jenis</TableHead>
-                  <TableHead>Kategori</TableHead>
-                  {showCosts ? <TableHead className="w-36 text-right">Harga RAB</TableHead> : null}
-                  {showCosts ? <TableHead className="w-36 text-right">Harga RAP</TableHead> : null}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-mono text-xs">
-                      <Link href={`/master-data/resources/${item.id}`} className="hover:underline">
-                        {item.code}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/master-data/resources/${item.id}`}
-                        className="font-medium hover:underline"
-                      >
-                        {item.name}
-                      </Link>
-                      {item.spec ? (
-                        <span className="block text-xs text-muted-foreground">{item.spec}</span>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{item.unitCode}</TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className="text-[10px]">
-                        {TYPE_LABELS[item.type]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {item.categoryName ?? EMPTY_VALUE}
-                    </TableCell>
-                    {showCosts ? (
-                      <TableCell className="text-right font-mono tabular-nums">
-                        {item.priceRab === null ? (
-                          <span className="text-muted-foreground">{EMPTY_VALUE}</span>
-                        ) : (
-                          formatCurrency(item.priceRab)
-                        )}
-                      </TableCell>
-                    ) : null}
-                    {showCosts ? (
-                      <TableCell className="text-right font-mono tabular-nums">
-                        {item.priceRap === null ? (
-                          <span className="text-muted-foreground">{EMPTY_VALUE}</span>
-                        ) : (
-                          formatCurrency(item.priceRap)
-                        )}
-                      </TableCell>
-                    ) : null}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <ResourcesTable
+            items={items.map((item) => ({
+              id: item.id,
+              code: item.code,
+              name: item.name,
+              spec: item.spec,
+              unitId: item.unitId,
+              unitCode: item.unitCode,
+              type: item.type,
+              categoryId: item.categoryId,
+              categoryName: item.categoryName,
+              leadTimeDays: item.leadTimeDays,
+              notes: item.notes,
+              priceRab: item.priceRab,
+              priceRap: item.priceRap,
+              isActive: item.isActive,
+            }))}
+            units={units.map((u) => ({ id: u.id, code: u.code, name: u.name }))}
+            categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+            typeLabels={TYPE_LABELS}
+            showCosts={showCosts}
+            canManage={canManage}
+          />
 
           <ResourcePagination page={page} pageSize={PAGE_SIZE} total={total} />
         </>

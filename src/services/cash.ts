@@ -10,10 +10,20 @@ import {
   cashTransactions,
   paymentClaims,
   paymentTerms,
+  progressEntries,
   projects,
   schedulePeriods,
 } from '@/db/schema';
+import { simulateCapitalNeed } from '@/lib/calc/capital';
 import { toDecimal, toMoneyString, toPercentString } from '@/lib/calc/decimal';
+import {
+  type EarnedValueStrings,
+  type PerformanceVerdict,
+  earnedValue,
+  performanceVerdict,
+  toStrings as toEarnedValueStrings,
+} from '@/lib/calc/earned-value';
+import { completionByItem } from '@/lib/calc/progress';
 import {
   type CashCategory,
   type CashDirection,
@@ -1046,6 +1056,153 @@ export async function getFinancialSummary(
   };
 }
 
+// --- capital planning -------------------------------------------------------
+
+export type CapitalPlan = {
+  earnedValue: EarnedValueStrings;
+  /** Budget at completion, which is total RAP. */
+  budgetAtCompletion: string;
+  plannedCumulative: string;
+  actualCumulative: string;
+  costVerdict: PerformanceVerdict;
+  scheduleVerdict: PerformanceVerdict;
+  simulation: {
+    targetWeight: string;
+    currentWeight: string;
+    gap: string;
+    totalRab: string;
+    totalRap: string;
+    achievable: boolean;
+    reachableWeight: string;
+    rows: {
+      workItemId: string;
+      code: string;
+      name: string;
+      weight: string;
+      completed: string;
+      requiredFraction: string;
+      weightGained: string;
+      costRab: string;
+      costRap: string;
+      isPartial: boolean;
+    }[];
+  };
+  showCosts: boolean;
+};
+
+/**
+ * Earned value analysis, and what it would cost to reach a progress target.
+ *
+ * Both answer the same underlying question from different ends: where the
+ * project stands against its budget, and what the next stretch of it requires
+ * in cash.
+ */
+export async function getCapitalPlan(
+  userId: string,
+  projectId: string,
+  targetWeight: string,
+): Promise<CapitalPlan> {
+  await assertProjectAccess(userId, projectId, 'VIEWER');
+
+  const [estimate, overview, comparison, summary] = await Promise.all([
+    getProjectEstimate(userId, projectId),
+    getScheduleOverview(userId, projectId),
+    getProgressComparison(userId, projectId).catch(() => null),
+    getFinancialSummary(userId, projectId),
+  ]);
+
+  const approved = await db
+    .select({
+      workItemId: progressEntries.workItemId,
+      periodId: progressEntries.periodId,
+      pctThisPeriod: progressEntries.pctThisPeriod,
+    })
+    .from(progressEntries)
+    .where(
+      and(eq(progressEntries.projectId, projectId), eq(progressEntries.status, 'APPROVED')),
+    );
+
+  const completion = new Map(
+    completionByItem(
+      approved,
+      estimate.items.map((item) => item.workItemId),
+    ).map((row) => [row.workItemId, row.completion]),
+  );
+
+  /*
+   * Plan order: the first period each item is scheduled to be worked in.
+   *
+   * Items with no plan sort last rather than first — an unscheduled item is
+   * the least certain thing to promise, and putting it at the head of a cash
+   * forecast would be the wrong kind of optimism.
+   */
+  const seqOf = new Map(overview.periods.map((period) => [period.id, period.seq]));
+  const firstPeriod = new Map<string, number>();
+  for (const cell of overview.effectivePlan) {
+    const seq = seqOf.get(cell.periodId);
+    if (seq === undefined) continue;
+    const current = firstPeriod.get(cell.workItemId);
+    if (current === undefined || seq < current) firstPeriod.set(cell.workItemId, seq);
+  }
+
+  const UNSCHEDULED = Number.MAX_SAFE_INTEGER;
+
+  const simulation = simulateCapitalNeed(
+    estimate.items.map((item) => ({
+      workItemId: item.workItemId,
+      code: item.code,
+      name: item.name,
+      weight: item.includeInProgressWeight ? item.weight : '0',
+      totalRab: item.totalRab,
+      totalRap: item.totalRap,
+      completed: (completion.get(item.workItemId) ?? toDecimal(0)).toString(),
+      order: firstPeriod.get(item.workItemId) ?? UNSCHEDULED,
+    })),
+    targetWeight,
+  );
+
+  const plannedCumulative = toDecimal(comparison?.current.plannedCumulative ?? 0);
+  const actualCumulative = toDecimal(comparison?.current.actualCumulative ?? 0);
+
+  const value = earnedValue({
+    budgetAtCompletion: estimate.totals.totalRap,
+    plannedCumulativePct: plannedCumulative,
+    actualCumulativePct: actualCumulative,
+    actualCost: summary.actualCost,
+  });
+
+  return {
+    earnedValue: toEarnedValueStrings(value),
+    budgetAtCompletion: estimate.totals.totalRap,
+    plannedCumulative: plannedCumulative.toString(),
+    actualCumulative: actualCumulative.toString(),
+    costVerdict: performanceVerdict(value.cpi),
+    scheduleVerdict: performanceVerdict(value.spi),
+    simulation: {
+      targetWeight: simulation.targetWeight.toString(),
+      currentWeight: simulation.currentWeight.toString(),
+      gap: simulation.gap.toString(),
+      totalRab: simulation.totalRab.toString(),
+      totalRap: simulation.totalRap.toString(),
+      achievable: simulation.achievable,
+      reachableWeight: simulation.reachableWeight.toString(),
+      rows: simulation.rows.map((row) => ({
+        workItemId: row.workItemId,
+        code: row.code,
+        name: row.name,
+        weight: row.weight.toString(),
+        completed: row.completed.toString(),
+        requiredFraction: row.requiredFraction.toString(),
+        weightGained: row.weightGained.toString(),
+        costRab: row.costRab.toString(),
+        costRap: row.costRap.toString(),
+        isPartial: row.isPartial,
+      })),
+    },
+    showCosts: estimate.showCosts,
+  };
+}
+
 /** Everything the executive dashboard needs, in one pass. */
 export async function getExecutiveSummary(userId: string, projectId: string) {
   const [schedule, progress, cash, financial] = await Promise.all([
@@ -1055,5 +1212,27 @@ export async function getExecutiveSummary(userId: string, projectId: string) {
     getFinancialSummary(userId, projectId),
   ]);
 
-  return { schedule, progress, cash, financial };
+  /*
+   * EVA is assembled here rather than fetched: every input is already loaded,
+   * and the dashboard's indices must be the same numbers the capital page
+   * shows. Both go through `earnedValue`, so they cannot drift apart.
+   */
+  const value = earnedValue({
+    budgetAtCompletion: financial.totalRap,
+    plannedCumulativePct: progress.current.plannedCumulative,
+    actualCumulativePct: progress.current.actualCumulative,
+    actualCost: financial.actualCost,
+  });
+
+  return {
+    schedule,
+    progress,
+    cash,
+    financial,
+    earnedValue: {
+      ...toEarnedValueStrings(value),
+      costVerdict: performanceVerdict(value.cpi),
+      scheduleVerdict: performanceVerdict(value.spi),
+    },
+  };
 }

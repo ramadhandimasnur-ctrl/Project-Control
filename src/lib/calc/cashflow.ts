@@ -7,6 +7,7 @@ import {
   toDecimal,
   type Numeric,
 } from './decimal';
+import { earnedValue } from './earned-value';
 
 /**
  * Project money — charter section 5.6.
@@ -295,12 +296,28 @@ export function costVariance(
 ): CostVariance {
   const rapValue = toDecimal(rap);
   const actualValue = toDecimal(actual);
-  const completion = clamp(toDecimal(completionPct), 0, 1);
-  const earned = rapValue.times(completion);
-  const variance = earned.minus(actualValue);
 
-  const cpi = safeDivide(earned, actualValue);
-  const estimateAtCompletion = cpi === null || cpi.isZero() ? null : rapValue.dividedBy(cpi);
+  /*
+   * Earned value, CPI and EAC come from the EVA module rather than being
+   * recomputed here. They are the same quantities under different names, and
+   * two implementations of the same number are two numbers waiting to disagree
+   * — the dashboard would eventually show a different CPI from the capital
+   * page with nothing to say which was right.
+   *
+   * The planned percentage is irrelevant to this function: it reports on cost,
+   * and PV only feeds the schedule half of EVA.
+   */
+  const value = earnedValue({
+    budgetAtCompletion: rapValue,
+    plannedCumulativePct: 0,
+    actualCumulativePct: completionPct,
+    actualCost: actualValue,
+  });
+
+  const earned = value.ev;
+  const variance = value.cv;
+  const cpi = value.cpi;
+  const estimateAtCompletion = value.eac;
 
   const band = earned.times(toDecimal(tolerance)).abs();
   const status: VarianceStatus = variance.abs().lessThanOrEqualTo(band)

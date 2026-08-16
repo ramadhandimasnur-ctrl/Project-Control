@@ -28,7 +28,6 @@ import { WorkItemDialog } from './work-item-dialog';
 
 type Lists = {
   units: { id: string; code: string; name: string }[];
-  groups: { id: string; code: string; name: string }[];
 };
 
 export type TemplateOption = {
@@ -42,7 +41,6 @@ export type TemplateOption = {
 export function WorkItemCreateButton({
   projectId,
   units,
-  groups,
 }: { projectId: string } & Lists) {
   const [open, setOpen] = useState(false);
 
@@ -59,7 +57,6 @@ export function WorkItemCreateButton({
           projectId={projectId}
           workItemId={null}
           units={units}
-          groups={groups}
         />
       ) : null}
     </>
@@ -76,7 +73,6 @@ export function WorkItemActionsBar({
   volumeLocked,
   impact,
   units,
-  groups,
   templates,
 }: {
   projectId: string;
@@ -197,7 +193,6 @@ export function WorkItemActionsBar({
           workItemId={workItemId}
           defaultValues={defaultValues}
           units={units}
-          groups={groups}
           volumeLocked={volumeLocked}
         />
       ) : null}

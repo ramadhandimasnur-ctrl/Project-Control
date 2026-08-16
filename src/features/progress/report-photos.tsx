@@ -69,7 +69,7 @@ export function ReportPhotoPlates({
       {general.length > 0 ? (
         <section className="space-y-2">
           <h3 className="text-sm font-semibold">Dokumentasi umum</h3>
-          <PlateGrid photos={general} />
+          <PlateGrid photos={general} fallbackCaption="Dokumentasi lapangan" />
         </section>
       ) : null}
 
@@ -78,7 +78,12 @@ export function ReportPhotoPlates({
           <h3 className="text-sm font-semibold">
             <span className="font-mono text-xs text-muted-foreground">{item.code}</span> {item.name}
           </h3>
-          <PlateGrid photos={photos} />
+          {/*
+            Untitled inspection photographs are captioned with the work item
+            they were taken against. A file name like IMG_20260816_112233.jpg
+            tells the reader of a printed report nothing at all.
+          */}
+          <PlateGrid photos={photos} fallbackCaption={`${item.code} — ${item.name}`} />
         </section>
       ))}
     </div>
@@ -87,24 +92,30 @@ export function ReportPhotoPlates({
 
 function PlateGrid({
   photos,
+  fallbackCaption,
 }: {
   photos: { id: string; name: string; url: string; caption: string }[];
+  /** Used when the user typed no caption of their own. */
+  fallbackCaption: string;
 }) {
   return (
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      {photos.map((photo) => (
-        <li key={photo.id} data-print="keep-together" className="space-y-1">
-          <div className="overflow-hidden rounded-md border bg-muted">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={photo.url}
-              alt={photo.caption || photo.name}
-              className="aspect-[4/3] w-full object-cover"
-            />
-          </div>
-          <p className="text-xs text-muted-foreground">{photo.caption || photo.name}</p>
-        </li>
-      ))}
+      {photos.map((photo, index) => {
+        const title = photo.caption.trim() || fallbackCaption;
+        // Numbered only when there are several, so a lone photograph is not
+        // captioned "… (1 dari 1)".
+        const label = photos.length > 1 ? `${title} (${index + 1}/${photos.length})` : title;
+
+        return (
+          <li key={photo.id} data-print="keep-together" className="space-y-1">
+            <div className="overflow-hidden rounded-md border bg-muted">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={photo.url} alt={label} className="aspect-[4/3] w-full object-cover" />
+            </div>
+            <p className="text-xs text-muted-foreground">{label}</p>
+          </li>
+        );
+      })}
     </ul>
   );
 }

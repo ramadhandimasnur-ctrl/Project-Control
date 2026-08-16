@@ -50,6 +50,26 @@ export const RESOURCE_FORM_DEFAULTS = {
   notes: '',
 } satisfies ResourceFormInput;
 
+// --- category ---------------------------------------------------------------
+
+export const categoryFormSchema = z.object({
+  code: code('Kode kategori', 32),
+  name: name('Nama kategori', 150),
+  type: z.enum(RESOURCE_TYPES, { message: 'Jenis wajib dipilih.' }),
+  /** Empty means a top-level category rather than an unset field. */
+  parentId: optionalId(),
+});
+
+export type CategoryFormInput = z.input<typeof categoryFormSchema>;
+export type CategoryFormValues = z.output<typeof categoryFormSchema>;
+
+export const CATEGORY_FORM_DEFAULTS = {
+  code: '',
+  name: '',
+  type: 'MATERIAL',
+  parentId: '',
+} satisfies CategoryFormInput;
+
 // --- unit -------------------------------------------------------------------
 
 export const unitFormSchema = z

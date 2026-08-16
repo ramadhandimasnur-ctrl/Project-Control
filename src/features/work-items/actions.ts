@@ -51,7 +51,9 @@ function failure(error: unknown): ActionResult {
 
 function revalidateProject(projectId: string): void {
   revalidatePath(`/projects/${projectId}/work-items`);
-  revalidatePath(`/projects/${projectId}/estimate`);
+  // Both halves of the estimate are priced from the same work items.
+  revalidatePath(`/projects/${projectId}/estimate/rab`);
+  revalidatePath(`/projects/${projectId}/estimate/rap`);
 }
 
 // --- work items -------------------------------------------------------------

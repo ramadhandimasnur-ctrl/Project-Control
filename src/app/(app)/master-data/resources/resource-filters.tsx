@@ -61,6 +61,22 @@ export function ResourceFilters({
 
   const hasFilters = Boolean(params.get('q') ?? params.get('type') ?? params.get('category'));
 
+  /*
+   * Base UI renders the raw value in the trigger unless the Root is told how
+   * values map to labels — which is why these read "__all__" without it. The
+   * lists have to include the sentinel row, since that is the value in force
+   * whenever no filter is applied.
+   */
+  const typeItems = [
+    { value: ALL, label: 'Semua jenis' },
+    ...Object.entries(typeLabels).map(([value, label]) => ({ value, label })),
+  ];
+
+  const categoryItems = [
+    { value: ALL, label: 'Semua kategori' },
+    ...categories.map((category) => ({ value: category.id, label: category.name })),
+  ];
+
   return (
     <div className="flex flex-wrap items-center gap-3">
       <div className="relative min-w-64 flex-1">
@@ -78,6 +94,7 @@ export function ResourceFilters({
       </div>
 
       <Select
+        items={typeItems}
         value={params.get('type') ?? ALL}
         onValueChange={(v) => setParam('type', v)}
       >
@@ -85,16 +102,16 @@ export function ResourceFilters({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL}>Semua jenis</SelectItem>
-          {Object.entries(typeLabels).map(([value, label]) => (
-            <SelectItem key={value} value={value}>
-              {label}
+          {typeItems.map((item) => (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
 
       <Select
+        items={categoryItems}
         value={params.get('category') ?? ALL}
         onValueChange={(v) => setParam('category', v)}
       >
@@ -102,10 +119,9 @@ export function ResourceFilters({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL}>Semua kategori</SelectItem>
-          {categories.map((c) => (
-            <SelectItem key={c.id} value={c.id}>
-              {c.name}
+          {categoryItems.map((item) => (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
             </SelectItem>
           ))}
         </SelectContent>

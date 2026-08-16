@@ -19,11 +19,7 @@ import { getProject } from '@/services/projects';
 import { listResources } from '@/services/resources';
 import { requireSessionUser } from '@/services/session';
 import { listUnits } from '@/services/units';
-import {
-  getWorkItemDeletionImpact,
-  listWorkGroups,
-  listWorkItems,
-} from '@/services/work-breakdown';
+import { getWorkItemDeletionImpact, listWorkItems } from '@/services/work-breakdown';
 
 export const metadata: Metadata = { title: 'Pekerjaan & AHSP' };
 
@@ -41,9 +37,8 @@ export default async function WorkItemsPage({
   const project = await getProject(user.id, projectId);
   const canEdit = canEditProjectData(project.role);
 
-  const [items, groups, units, showCosts, templates] = await Promise.all([
+  const [items, units, showCosts, templates] = await Promise.all([
     listWorkItems(user.id, projectId),
-    listWorkGroups(user.id, projectId),
     listUnits(user.id),
     canViewOrgCosts(user.id),
     // Only templates whose resources all still exist and are active can be
@@ -65,7 +60,6 @@ export default async function WorkItemsPage({
     : [null, null, { items: [] }];
 
   const unitOptions = units.map((u) => ({ id: u.id, code: u.code, name: u.name }));
-  const groupOptions = groups.map((g) => ({ id: g.id, code: g.code, name: g.name }));
 
   return (
     <div className="flex min-h-[calc(100vh-3.5rem)]">
@@ -77,7 +71,7 @@ export default async function WorkItemsPage({
             <p className="text-xs text-muted-foreground">{items.length} item</p>
           </div>
           {canEdit ? (
-            <WorkItemCreateButton projectId={projectId} units={unitOptions} groups={groupOptions} />
+            <WorkItemCreateButton projectId={projectId} units={unitOptions} />
           ) : null}
         </div>
 
@@ -151,7 +145,6 @@ export default async function WorkItemsPage({
                   volumeLocked={selected.hasTakeoffs}
                   impact={impact}
                   units={unitOptions}
-                  groups={groupOptions}
                   templates={templates}
                   defaultValues={{
                     code: selected.code,

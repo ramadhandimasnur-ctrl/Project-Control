@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import { toUserMessage } from '@/lib/errors';
 import {
+  categoryFormSchema,
   priceFormSchema,
   resourceFormSchema,
   supplierFormSchema,
@@ -11,7 +12,13 @@ import {
 } from '@/lib/validation/master-data';
 import { setPrice } from '@/services/prices';
 import {
+  createCategory,
+  deleteCategory,
+  updateCategory,
+} from '@/services/resource-categories';
+import {
   createResource,
+  deleteManyResources,
   deleteResource,
   setResourceActive,
   updateResource,
@@ -97,6 +104,76 @@ export async function deleteResourceAction(resourceId: string): Promise<ActionRe
   try {
     const user = await requireSessionUser();
     await deleteResource(user, resourceId);
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidateCatalogue();
+  return { ok: true };
+}
+
+export type BulkDeleteActionResult =
+  | { ok: true; deleted: number; refused: { id: string; name: string; reason: string }[] }
+  | { ok: false; message: string; hint?: string };
+
+/**
+ * Deletes a selection, reporting exactly what happened to each one.
+ *
+ * A bulk action that silently drops the ones it could not do is worse than one
+ * that refuses outright — the user walks away believing the list is clean.
+ */
+export async function deleteResourcesAction(
+  resourceIds: string[],
+): Promise<BulkDeleteActionResult> {
+  try {
+    const user = await requireSessionUser();
+    const result = await deleteManyResources(user, resourceIds);
+    revalidateCatalogue();
+    return { ok: true, deleted: result.deleted, refused: result.refused };
+  } catch (error) {
+    const { message, hint } = toUserMessage(error);
+    return hint === undefined ? { ok: false, message } : { ok: false, message, hint };
+  }
+}
+
+// --- categories -------------------------------------------------------------
+
+export async function saveCategoryAction(
+  categoryId: string | null,
+  raw: unknown,
+): Promise<ActionResult> {
+  const parsed = categoryFormSchema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: 'Periksa kembali isian formulir.',
+      fieldErrors: fieldErrorsOf(parsed.error.issues),
+    };
+  }
+
+  try {
+    const user = await requireSessionUser();
+    const input = {
+      code: parsed.data.code,
+      name: parsed.data.name,
+      type: parsed.data.type,
+      parentId: parsed.data.parentId,
+    };
+
+    if (categoryId === null) await createCategory(user, input);
+    else await updateCategory(user, categoryId, input);
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidateCatalogue();
+  return { ok: true };
+}
+
+export async function deleteCategoryAction(categoryId: string): Promise<ActionResult> {
+  try {
+    const user = await requireSessionUser();
+    await deleteCategory(user, categoryId);
   } catch (error) {
     return failure(error);
   }

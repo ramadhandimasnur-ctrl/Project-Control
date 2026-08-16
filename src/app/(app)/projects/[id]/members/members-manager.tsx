@@ -54,6 +54,21 @@ export function MembersManager({
   const [selectedUser, setSelectedUser] = useState<string>('');
   const [selectedRole, setSelectedRole] = useState<ProjectRole>('ENGINEER');
 
+  /*
+   * Base UI shows the raw value in the trigger unless the Root is told how
+   * values map to labels — a role select would otherwise read "PROJECT_MANAGER"
+   * and a user select would show a UUID.
+   */
+  const roleItems = PROJECT_ROLES.map((role) => ({
+    value: role,
+    label: PROJECT_ROLE_LABELS[role],
+  }));
+
+  const userItems = assignableUsers.map((user) => ({
+    value: user.id,
+    label: `${user.fullName} — ${user.email}`,
+  }));
+
   const run = (fn: () => Promise<{ ok: boolean; message?: string; hint?: string }>) => {
     startTransition(async () => {
       const result = await fn();
@@ -81,6 +96,7 @@ export function MembersManager({
               <>
                 <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
                   <Select
+                    items={userItems}
                     value={selectedUser}
                     onValueChange={(value) => setSelectedUser(value ?? '')}
                   >
@@ -88,15 +104,16 @@ export function MembersManager({
                       <SelectValue placeholder="Pilih pengguna" />
                     </SelectTrigger>
                     <SelectContent>
-                      {assignableUsers.map((u) => (
-                        <SelectItem key={u.id} value={u.id}>
-                          {u.fullName} — {u.email}
+                      {userItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
 
                   <Select
+                    items={roleItems}
                     value={selectedRole}
                     onValueChange={(value) => {
                       if (value !== null) setSelectedRole(value as ProjectRole);
@@ -106,9 +123,9 @@ export function MembersManager({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {PROJECT_ROLES.map((role) => (
-                        <SelectItem key={role} value={role}>
-                          {PROJECT_ROLE_LABELS[role]}
+                      {roleItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -170,6 +187,7 @@ export function MembersManager({
                   <TableCell>
                     {canManage ? (
                       <Select
+                        items={roleItems}
                         value={member.role}
                         disabled={pending}
                         onValueChange={(value) => {
@@ -183,9 +201,9 @@ export function MembersManager({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {PROJECT_ROLES.map((role) => (
-                            <SelectItem key={role} value={role}>
-                              {PROJECT_ROLE_LABELS[role]}
+                          {roleItems.map((item) => (
+                            <SelectItem key={item.value} value={item.value}>
+                              {item.label}
                             </SelectItem>
                           ))}
                         </SelectContent>

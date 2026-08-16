@@ -41,7 +41,6 @@ export function WorkItemDialog({
   workItemId,
   defaultValues,
   units,
-  groups,
   volumeLocked = false,
 }: {
   open: boolean;
@@ -50,7 +49,6 @@ export function WorkItemDialog({
   workItemId: string | null;
   defaultValues?: WorkItemFormInput;
   units: { id: string; code: string; name: string }[];
-  groups: { id: string; code: string; name: string }[];
   /** True when the volume comes from take-off rows and must not be typed over. */
   volumeLocked?: boolean;
 }) {
@@ -106,8 +104,8 @@ export function WorkItemDialog({
         <DialogHeader>
           <DialogTitle>{workItemId === null ? 'Tambah pekerjaan' : 'Ubah pekerjaan'}</DialogTitle>
           <DialogDescription>
-            Harga satuan kontrak adalah otoritas pendapatan. Bila dikosongkan, nilai kontrak
-            dihitung dari RAB ditambah markup proyek.
+            Volume dan satuan menentukan besaran pekerjaan; biayanya dihitung dari analisa AHSP.
+            Nilai kontrak diturunkan dari RAB ditambah markup proyek.
           </DialogDescription>
         </DialogHeader>
 
@@ -142,15 +140,15 @@ export function WorkItemDialog({
             registration={register('spec')}
           />
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            <SelectField
-              id="groupId"
-              label="Kelompok"
-              error={messageOf('groupId')}
-              registration={register('groupId')}
-              placeholder="Tanpa kelompok"
-              options={groups.map((g) => ({ value: g.id, label: `${g.code} — ${g.name}` }))}
-            />
+          {/*
+            Kelompok and Harga satuan kontrak are deliberately absent from this
+            form. Both columns still exist and still matter, so their values
+            ride along in the form state untouched — react-hook-form keeps the
+            defaults of fields it was never asked to render, which means editing
+            a work item here cannot silently blank a contract price somebody
+            entered before.
+          */}
+          <div className="grid gap-4 sm:grid-cols-2">
             <SelectField
               id="wi-unitId"
               label="Satuan"
@@ -175,13 +173,12 @@ export function WorkItemDialog({
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <TextField
-              id="contractUnitPrice"
-              label="Harga satuan kontrak (Rp)"
-              inputMode="decimal"
-              hint="Kosongkan bila belum ada. Isi 0 bila pekerjaan ini memang tidak ditagih terpisah."
-              error={messageOf('contractUnitPrice')}
-              registration={register('contractUnitPrice')}
+            <SelectField
+              id="progressMethod"
+              label="Metode progres"
+              error={messageOf('progressMethod')}
+              registration={register('progressMethod')}
+              options={PROGRESS_METHOD_OPTIONS}
             />
             <TextField
               id="sortOrder"
@@ -192,14 +189,6 @@ export function WorkItemDialog({
               registration={register('sortOrder')}
             />
           </div>
-
-          <SelectField
-            id="progressMethod"
-            label="Metode progres"
-            error={messageOf('progressMethod')}
-            registration={register('progressMethod')}
-            options={PROGRESS_METHOD_OPTIONS}
-          />
 
           <label className="flex items-start justify-between gap-4 rounded-md border p-3">
             <span className="text-sm">

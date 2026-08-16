@@ -1,5 +1,6 @@
 import {
   Banknote,
+  Calculator,
   CalendarRange,
   ClipboardCheck,
   FileBarChart,
@@ -56,9 +57,16 @@ export function projectNavSections(projectId: string): NavSection[] {
       items: [
         { label: 'Pekerjaan & AHSP', href: `${base}/work-items`, icon: Sigma, phase: 3 },
         {
-          label: 'RAB & RAP',
-          href: `${base}/estimate`,
+          label: 'RAB',
+          href: `${base}/estimate/rab`,
           icon: FileBarChart,
+          phase: 3,
+          requiresCostAccess: true,
+        },
+        {
+          label: 'RAP',
+          href: `${base}/estimate/rap`,
+          icon: Calculator,
           phase: 3,
           requiresCostAccess: true,
         },
@@ -75,12 +83,6 @@ export function projectNavSections(projectId: string): NavSection[] {
       title: 'Pelaksanaan',
       items: [
         { label: 'Input Progres', href: `${base}/progress`, icon: ClipboardCheck, phase: 6 },
-        {
-          label: 'Laporan Opname',
-          href: `${base}/reports/opname`,
-          icon: FileText,
-          phase: 6,
-        },
         { label: 'Kebutuhan Material', href: `${base}/material`, icon: Package, phase: 4 },
         { label: 'Gudang', href: `${base}/warehouse`, icon: Warehouse, phase: 4 },
         {
@@ -106,8 +108,16 @@ export function projectNavSections(projectId: string): NavSection[] {
       ],
     },
     {
+      /*
+       * Both report surfaces live together. The opname sheet used to sit under
+       * Pelaksanaan next to the screen that feeds it, which reads sensibly
+       * while building it and not at all while looking for a report.
+       */
       title: 'Laporan',
-      items: [{ label: 'Laporan', href: `${base}/reports`, icon: FileBarChart, phase: 9 }],
+      items: [
+        { label: 'Laporan & Terbitan', href: `${base}/reports`, icon: FileBarChart, phase: 9 },
+        { label: 'Laporan Opname', href: `${base}/reports/opname`, icon: FileText, phase: 6 },
+      ],
     },
     {
       title: 'Pengaturan',

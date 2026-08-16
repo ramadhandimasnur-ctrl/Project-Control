@@ -12,6 +12,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -62,6 +63,8 @@ export function AhspPanel({
   for (const role of AHSP_ROLE_ORDER) byRole.set(role, []);
   for (const line of estimate.lines) byRole.get(line.role)?.push(line);
 
+  const emptyRoles = AHSP_ROLE_ORDER.filter((role) => (byRole.get(role) ?? []).length === 0);
+
   const removeLine = (line: AhspLineView) => {
     startTransition(async () => {
       const result = await deleteAhspLineAction(projectId, workItemId, line.id);
@@ -105,14 +108,37 @@ export function AhspPanel({
         </Alert>
       ) : null}
 
+      {/*
+        Empty sections collapse into one row of buttons instead of five dashed
+        boxes. On a work item with no analysis yet the old layout was almost
+        entirely empty placeholders, which buried the sections that did have
+        content.
+      */}
+      {canEdit && emptyRoles.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed px-3 py-2">
+          <span className="text-xs text-muted-foreground">Bagian yang belum diisi:</span>
+          {emptyRoles.map((role) => (
+            <Button key={role} variant="ghost" size="sm" onClick={() => setAdding(role)}>
+              <Plus className="size-3.5" aria-hidden />
+              {AHSP_ROLE_LABELS[role]}
+            </Button>
+          ))}
+        </div>
+      ) : null}
+
       {AHSP_ROLE_ORDER.map((role) => {
         const lines = byRole.get(role) ?? [];
-        if (lines.length === 0 && !canEdit) return null;
+        if (lines.length === 0) return null;
 
         return (
           <section key={role} className="space-y-2">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">{AHSP_ROLE_LABELS[role]}</h3>
+              <h3 className="text-sm font-semibold">
+                {AHSP_ROLE_LABELS[role]}
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  {lines.length} baris
+                </span>
+              </h3>
               {canEdit ? (
                 <Button variant="ghost" size="sm" onClick={() => setAdding(role)}>
                   <Plus className="size-4" aria-hidden />
@@ -121,11 +147,7 @@ export function AhspPanel({
               ) : null}
             </div>
 
-            {lines.length === 0 ? (
-              <p className="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
-                Belum ada baris pada bagian ini.
-              </p>
-            ) : (
+            {(
               <div className="overflow-x-auto rounded-lg border">
                 <Table>
                   <TableHeader>
@@ -206,41 +228,74 @@ export function AhspPanel({
                       </TableRow>
                     ))}
                   </TableBody>
+
+                  {/*
+                    The subtotal sits under the column it sums instead of
+                    floating as a line of prose beneath the table — that is
+                    where a reader checking an AHSP sheet looks for it.
+                  */}
+                  {showCosts ? (
+                    <TableFooter>
+                      <TableRow>
+                        <TableCell colSpan={6}>Jumlah {AHSP_ROLE_LABELS[role]}</TableCell>
+                        <TableCell />
+                        <TableCell className="text-right font-mono font-medium tabular-nums">
+                          {formatCurrency(estimate.subtotalsRap[role])}
+                        </TableCell>
+                        {canEdit ? <TableCell /> : null}
+                      </TableRow>
+                    </TableFooter>
+                  ) : null}
                 </Table>
               </div>
             )}
-
-            {showCosts && lines.length > 0 ? (
-              <p className="text-right text-sm">
-                <span className="text-muted-foreground">Jumlah {AHSP_ROLE_LABELS[role]}: </span>
-                <span className="font-mono font-medium tabular-nums">
-                  {formatCurrency(estimate.subtotalsRap[role])}
-                </span>
-              </p>
-            ) : null}
           </section>
         );
       })}
 
+      {/*
+        Two blocks rather than one eight-cell grid. Per-unit and whole-item
+        figures are different orders of magnitude, and mixing them made it easy
+        to read a unit rate as a total.
+      */}
       {showCosts ? (
-        <div className="rounded-lg border bg-muted/30 p-4">
-          <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Figure label={`Harga satuan RAB per ${unitCode}`} value={estimate.unitCostRab} />
-            <Figure label={`Harga satuan RAP per ${unitCode}`} value={estimate.unitCostRap} />
-            <Figure label="Selisih RAB − RAP" value={estimate.estimateSpread} />
-            <Figure label="Total RAB" value={estimate.totalRab} strong />
-            <Figure label="Total RAP" value={estimate.totalRap} strong />
-            <Figure label="Nilai kontrak" value={estimate.contractValue} strong />
-            <Figure label="Margin" value={estimate.margin} strong />
-            <div>
-              <dt className="text-xs uppercase tracking-wide text-muted-foreground">% Margin</dt>
-              <dd className="mt-0.5 font-mono text-sm font-semibold tabular-nums">
-                {estimate.marginPercent === null
-                  ? EMPTY_VALUE
-                  : formatPercent(estimate.marginPercent)}
-              </dd>
-            </div>
-          </dl>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div className="rounded-lg border p-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Per {unitCode}
+            </p>
+            <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-3">
+              <Figure label="Harga satuan RAB" value={estimate.unitCostRab} />
+              <Figure label="Harga satuan RAP" value={estimate.unitCostRap} />
+              <Figure label="Selisih" value={estimate.estimateSpread} />
+            </dl>
+          </div>
+
+          <div className="rounded-lg border bg-muted/30 p-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Total pekerjaan · volume {formatQuantity(estimate.volume)} {unitCode}
+            </p>
+            <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+              <Figure label="Total RAB" value={estimate.totalRab} strong />
+              <Figure label="Total RAP" value={estimate.totalRap} strong />
+              <Figure label="Nilai kontrak" value={estimate.contractValue} strong />
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Margin</dt>
+                <dd
+                  className={`mt-0.5 font-mono text-sm font-semibold tabular-nums ${
+                    Number(estimate.margin) < 0 ? 'text-destructive' : ''
+                  }`}
+                >
+                  {formatCurrency(estimate.margin)}
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {estimate.marginPercent === null
+                      ? EMPTY_VALUE
+                      : formatPercent(estimate.marginPercent)}
+                  </span>
+                </dd>
+              </div>
+            </dl>
+          </div>
         </div>
       ) : null}
 

@@ -8,6 +8,7 @@ import { CashflowChart } from '@/features/cash/cashflow-chart';
 import { SCurveChart } from '@/features/schedule/scurve-chart';
 import { canViewCosts } from '@/lib/auth/roles';
 import { VARIANCE_STATUS_LABELS } from '@/lib/calc/cashflow';
+import { PERFORMANCE_LABELS, type PerformanceVerdict } from '@/lib/calc/earned-value';
 import { PROGRESS_STATUS_LABELS } from '@/lib/calc/progress';
 import { EMPTY_VALUE, formatCurrency, formatDay, formatPercent, formatRatio } from '@/lib/format';
 import { getExecutiveSummary } from '@/services/cash';
@@ -37,6 +38,14 @@ const VARIANCE_TONE = {
   OVER: 'text-destructive',
 } as const;
 
+/** Unmeasured stays neutral — grey is honest, green would be a claim. */
+const VERDICT_TONE: Record<PerformanceVerdict, string | undefined> = {
+  GOOD: 'text-primary',
+  WATCH: 'text-amber-600 dark:text-amber-500',
+  BAD: 'text-destructive',
+  UNKNOWN: 'text-muted-foreground',
+};
+
 export default async function ProjectDashboardPage({
   params,
 }: {
@@ -49,7 +58,7 @@ export default async function ProjectDashboardPage({
   const showCosts = canViewCosts(project.role);
   const summary = await getExecutiveSummary(user.id, projectId);
 
-  const { progress, cash, financial, schedule } = summary;
+  const { progress, cash, financial, schedule, earnedValue } = summary;
 
   const lastReported = progress.points.filter((point) => point.spi !== null).at(-1)?.seq ?? null;
   const curve = schedule.curve.map((point) => ({
@@ -188,6 +197,45 @@ export default async function ProjectDashboardPage({
                     : `${formatPercent(financial.margin.projectedPercent, 2)} · rencana ${formatCurrency(financial.margin.planned)}`
                 }
                 tone={Number(financial.margin.projected) < 0 ? 'text-destructive' : undefined}
+              />
+            </dl>
+          </section>
+
+          {/*
+            The pair of indices, side by side. Read together they say which
+            kind of trouble a project is in: late, expensive, or both — a
+            distinction the single margin figure above cannot make.
+          */}
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Earned Value</h2>
+              <ButtonLink
+                variant="link"
+                href={`/projects/${projectId}/capital`}
+                className="h-auto p-0 text-xs"
+              >
+                Rincian di Kebutuhan Modal
+              </ButtonLink>
+            </div>
+            <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+              <Figure
+                label="PV"
+                value={formatCurrency(earnedValue.pv)}
+                caption="Nilai rencana"
+              />
+              <Figure label="EV" value={formatCurrency(earnedValue.ev)} caption="Nilai jadi" />
+              <Figure label="AC" value={formatCurrency(earnedValue.ac)} caption="Biaya nyata" />
+              <Figure
+                label="CPI"
+                value={earnedValue.cpi === null ? EMPTY_VALUE : formatRatio(earnedValue.cpi)}
+                caption={PERFORMANCE_LABELS[earnedValue.costVerdict]}
+                tone={VERDICT_TONE[earnedValue.costVerdict]}
+              />
+              <Figure
+                label="SPI"
+                value={earnedValue.spi === null ? EMPTY_VALUE : formatRatio(earnedValue.spi)}
+                caption={PERFORMANCE_LABELS[earnedValue.scheduleVerdict]}
+                tone={VERDICT_TONE[earnedValue.scheduleVerdict]}
               />
             </dl>
           </section>
