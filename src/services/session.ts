@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { eq } from 'drizzle-orm';
+import { cache } from 'react';
 
 import { db } from '@/db';
 import { users } from '@/db/schema';
@@ -22,8 +23,12 @@ export type SessionUser = {
  * Two lookups on purpose: Supabase Auth answers "who is this", the `users`
  * table answers "what are they in this application". A Supabase account with
  * no active row here is treated as not signed in.
+ *
+ * Memoised per request. Both lookups cross the network, the layout and the
+ * page each ask for the user, and neither the token nor the row can change
+ * between them.
  */
-export async function getSessionUser(): Promise<SessionUser | null> {
+export const getSessionUser: () => Promise<SessionUser | null> = cache(async () => {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -53,7 +58,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     fullName: row.fullName,
     globalRole: row.globalRole,
   };
-}
+});
 
 export async function requireSessionUser(): Promise<SessionUser> {
   const user = await getSessionUser();

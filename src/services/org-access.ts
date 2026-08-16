@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { eq } from 'drizzle-orm';
+import { cache } from 'react';
 
 import { db } from '@/db';
 import { projectMembers, users } from '@/db/schema';
@@ -29,28 +30,43 @@ export async function assertOrgAccess(
   userId: string,
   minRole: GlobalRole = 'MEMBER',
 ): Promise<OrgAccess> {
-  const [user] = await db
-    .select({
-      id: users.id,
-      orgId: users.orgId,
-      globalRole: users.globalRole,
-      isActive: users.isActive,
-    })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
+  const access = await resolveOrgAccess(userId);
 
-  if (!user || !user.isActive) throw unauthenticated();
-
-  if (minRole === 'ADMIN' && user.globalRole !== 'ADMIN') {
+  if (minRole === 'ADMIN' && access.globalRole !== 'ADMIN') {
     throw forbidden(
       'Perubahan master data hanya dapat dilakukan oleh administrator organisasi.',
       'Master data dipakai bersama oleh seluruh proyek, sehingga perubahannya dipusatkan. Hubungi administrator Anda.',
     );
   }
 
-  return { userId: user.id, orgId: user.orgId, globalRole: user.globalRole };
+  return access;
 }
+
+/**
+ * Who this user is in their organisation, once per request.
+ *
+ * Split from the assertion for the reason given on `resolveProjectAccess`: the
+ * threshold differs per call site, the identity behind it does not. A master
+ * data page calls four services and each one opens with this question.
+ */
+export const resolveOrgAccess: (userId: string) => Promise<OrgAccess> = cache(
+  async (userId: string) => {
+    const [user] = await db
+      .select({
+        id: users.id,
+        orgId: users.orgId,
+        globalRole: users.globalRole,
+        isActive: users.isActive,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user || !user.isActive) throw unauthenticated();
+
+    return { userId: user.id, orgId: user.orgId, globalRole: user.globalRole };
+  },
+);
 
 /**
  * Whether the price book may be shown to this user at all.
@@ -63,15 +79,17 @@ export async function assertOrgAccess(
  *
  * Charter rule 7: the columns are dropped on the server, not hidden with CSS.
  */
-export async function canViewOrgCosts(userId: string): Promise<boolean> {
-  const access = await assertOrgAccess(userId);
-  if (access.globalRole === 'ADMIN') return true;
+export const canViewOrgCosts: (userId: string) => Promise<boolean> = cache(
+  async (userId: string) => {
+    const access = await resolveOrgAccess(userId);
+    if (access.globalRole === 'ADMIN') return true;
 
-  const memberships = await db
-    .select({ role: projectMembers.role })
-    .from(projectMembers)
-    .where(eq(projectMembers.userId, userId));
+    const memberships = await db
+      .select({ role: projectMembers.role })
+      .from(projectMembers)
+      .where(eq(projectMembers.userId, userId));
 
-  // No membership at all: nothing to reveal, and nothing to justify revealing.
-  return memberships.some((m) => canViewCosts(m.role));
-}
+    // No membership at all: nothing to reveal, and nothing to justify revealing.
+    return memberships.some((m) => canViewCosts(m.role));
+  },
+);

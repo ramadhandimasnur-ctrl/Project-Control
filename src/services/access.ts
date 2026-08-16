@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { and, eq } from 'drizzle-orm';
+import { cache } from 'react';
 
 import { db } from '@/db';
 import { projectMembers, projects, users } from '@/db/schema';
@@ -36,63 +37,92 @@ export async function assertProjectAccess(
   projectId: string,
   minRole: ProjectRole,
 ): Promise<ProjectAccess> {
-  const [user] = await db
+  const access = await resolveProjectAccess(userId, projectId);
+
+  if (!hasAtLeast(access.role, minRole)) {
+    throw forbidden(
+      `Tindakan ini memerlukan peran ${PROJECT_ROLE_LABELS[minRole]}, sedangkan peran Anda ${PROJECT_ROLE_LABELS[access.role]}.`,
+      'Hubungi manajer proyek bila Anda memang memerlukan akses ini.',
+    );
+  }
+
+  return access;
+}
+
+/**
+ * Who this user is on this project: one query, once per request.
+ *
+ * Split from the assertion above because the two do different jobs and only
+ * one of them can be memoised. The threshold varies per call site — the same
+ * page asks for VIEWER to read and ENGINEER to decide whether to offer an edit
+ * button — so caching the assertion would key on `minRole` and dedupe nothing.
+ * What cannot change within a request is who this person is here, and that is
+ * what is cached.
+ *
+ * It matters because every function in `services/` opens with this check. A
+ * page calling six of them paid eighteen round trips re-answering a question
+ * whose answer cannot change mid-render, and at ~100 ms to the pooler that was
+ * most of what made a page feel slow.
+ *
+ * One statement rather than three for the same reason: the user row, the
+ * project row and the membership row are wanted together or not at all, and
+ * asking in sequence spends two round trips waiting to ask questions it could
+ * have asked at the start.
+ *
+ * The explicit type annotation is not decoration. `cache()` is generic, and
+ * without it TypeScript widens a `Promise.all([...])` tuple containing this
+ * call to `any[]` — every sibling in the tuple silently loses its type.
+ */
+export const resolveProjectAccess: (
+  userId: string,
+  projectId: string,
+) => Promise<ProjectAccess> = cache(async (userId: string, projectId: string) => {
+  const [row] = await db
     .select({
-      id: users.id,
-      orgId: users.orgId,
+      userOrgId: users.orgId,
       globalRole: users.globalRole,
       isActive: users.isActive,
+      projectId: projects.id,
+      projectOrgId: projects.orgId,
+      projectName: projects.name,
+      membershipRole: projectMembers.role,
     })
     .from(users)
+    .leftJoin(projects, eq(projects.id, projectId))
+    .leftJoin(
+      projectMembers,
+      and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)),
+    )
     .where(eq(users.id, userId))
     .limit(1);
 
-  if (!user || !user.isActive) throw unauthenticated();
+  if (!row || !row.isActive) throw unauthenticated();
 
-  const [project] = await db
-    .select({ id: projects.id, orgId: projects.orgId, name: projects.name })
-    .from(projects)
-    .where(eq(projects.id, projectId))
-    .limit(1);
-
-  if (!project || project.orgId !== user.orgId) {
+  if (row.projectId === null || row.projectOrgId !== row.userOrgId) {
     throw notFound(
       'Proyek tidak ditemukan.',
       'Proyek mungkin sudah dihapus, atau Anda tidak memiliki akses ke proyek ini.',
     );
   }
 
-  const [membership] = await db
-    .select({ role: projectMembers.role })
-    .from(projectMembers)
-    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
-    .limit(1);
-
-  const isGlobalAdmin = user.globalRole === 'ADMIN';
-  const role: ProjectRole | null = membership?.role ?? (isGlobalAdmin ? 'ADMIN' : null);
+  const isGlobalAdmin = row.globalRole === 'ADMIN';
+  const role: ProjectRole | null = row.membershipRole ?? (isGlobalAdmin ? 'ADMIN' : null);
 
   if (!role) {
     throw forbidden(
-      `Anda bukan anggota proyek "${project.name}".`,
+      `Anda bukan anggota proyek "${row.projectName}".`,
       'Minta manajer proyek menambahkan Anda sebagai anggota.',
-    );
-  }
-
-  if (!hasAtLeast(role, minRole)) {
-    throw forbidden(
-      `Tindakan ini memerlukan peran ${PROJECT_ROLE_LABELS[minRole]}, sedangkan peran Anda ${PROJECT_ROLE_LABELS[role]}.`,
-      'Hubungi manajer proyek bila Anda memang memerlukan akses ini.',
     );
   }
 
   return {
     projectId,
     userId,
-    orgId: user.orgId,
+    orgId: row.userOrgId,
     role,
-    viaGlobalAdmin: !membership && isGlobalAdmin,
+    viaGlobalAdmin: row.membershipRole === null && isGlobalAdmin,
   };
-}
+});
 
 /**
  * Non-throwing variant, for rendering decisions where "no access" is a normal
