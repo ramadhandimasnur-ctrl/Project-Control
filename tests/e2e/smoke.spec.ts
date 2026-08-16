@@ -74,6 +74,15 @@ test('setiap modul proyek terbuka tanpa error', async ({ page }) => {
     '/estimate',
     '/estimate/rab',
     '/estimate/rap',
+    '/cco',
+    /*
+     * The print sheets are ordinary pages that happen to be styled for paper,
+     * and they assemble more data than any other screen — both analyses of
+     * every work item, and the whole scope against Baseline 0. If one of them
+     * throws, it does so here or on somebody's tender deadline.
+     */
+    '/work-items/print',
+    '/cco/print',
     '/schedule',
     '/scurve',
     '/progress',
