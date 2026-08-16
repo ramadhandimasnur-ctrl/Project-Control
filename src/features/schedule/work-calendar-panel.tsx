@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { formatDay } from '@/lib/format';
 
-import { addHolidayAction, deleteHolidayAction, setCountWeekendsAction } from './actions';
+import { addHolidayAction, deleteHolidayAction, setWeekendDayAction } from './actions';
 
 export type Holiday = { id: string; holidayDate: string; name: string };
 
@@ -27,12 +27,14 @@ export type Holiday = { id: string; holidayDate: string; name: string };
  */
 export function WorkCalendarPanel({
   projectId,
-  countWeekends,
+  countSaturday,
+  countSunday,
   holidays,
   canEdit,
 }: {
   projectId: string;
-  countWeekends: boolean;
+  countSaturday: boolean;
+  countSunday: boolean;
   holidays: Holiday[];
   canEdit: boolean;
 }) {
@@ -62,32 +64,30 @@ export function WorkCalendarPanel({
           </p>
         </div>
 
-        <label className="flex items-center gap-3 rounded-md border px-3 py-2">
-          <span className="text-sm">
-            <span className="font-medium">Sabtu &amp; Minggu hari kerja</span>
-            <span className="mt-0.5 block text-xs text-muted-foreground">
-              {countWeekends
-                ? 'Akhir pekan ikut dihitung sebagai durasi.'
-                : 'Akhir pekan dikecualikan dari durasi dan distribusi.'}
-            </span>
-          </span>
-          <Switch
-            checked={countWeekends}
+        {/*
+          Two switches, not one. A six-day week — Saturday worked, Sunday not —
+          is the ordinary arrangement on site, and the single weekend toggle
+          forced it to be described as either seven days or five. Neither is
+          true, and both are wrong by roughly four days a month.
+        */}
+        <div className="flex flex-wrap gap-2">
+          <WeekendSwitch
+            projectId={projectId}
+            day="SATURDAY"
+            label="Sabtu hari kerja"
+            checked={countSaturday}
             disabled={!canEdit || pending}
-            aria-label="Hitung akhir pekan sebagai hari kerja"
-            onCheckedChange={(next) =>
-              run(async () => {
-                const result = await setCountWeekendsAction(projectId, next);
-                if (result.ok) {
-                  toast.success(
-                    next ? 'Akhir pekan dihitung sebagai hari kerja.' : 'Akhir pekan dikecualikan.',
-                  );
-                }
-                return result;
-              })
-            }
+            run={run}
           />
-        </label>
+          <WeekendSwitch
+            projectId={projectId}
+            day="SUNDAY"
+            label="Minggu hari kerja"
+            checked={countSunday}
+            disabled={!canEdit || pending}
+            run={run}
+          />
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -146,7 +146,7 @@ export function WorkCalendarPanel({
 
         {holidays.length === 0 ? (
           <p className="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
-            Belum ada hari libur khusus. Akhir pekan diatur terpisah lewat sakelar di atas.
+            Belum ada hari libur khusus. Sabtu dan Minggu diatur terpisah lewat sakelar di atas.
           </p>
         ) : (
           <ul className="divide-y rounded-md border">
@@ -190,5 +190,59 @@ export function WorkCalendarPanel({
         ulang pekerjaan yang bersangkutan bila ingin rencananya mengikuti kalender baru.
       </p>
     </section>
+  );
+}
+
+/**
+ * One weekend day.
+ *
+ * Extracted so the two switches cannot drift apart in wording or behaviour —
+ * a Sabtu switch that saved on toggle while Minggu saved on blur would be a
+ * very quiet way to lose a setting.
+ */
+function WeekendSwitch({
+  projectId,
+  day,
+  label,
+  checked,
+  disabled,
+  run,
+}: {
+  projectId: string;
+  day: 'SATURDAY' | 'SUNDAY';
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+  run: (fn: () => Promise<{ ok: boolean; message?: string; hint?: string }>) => void;
+}) {
+  const dayName = day === 'SATURDAY' ? 'Sabtu' : 'Minggu';
+
+  return (
+    <label className="flex items-center gap-3 rounded-md border px-3 py-2">
+      <span className="text-sm">
+        <span className="font-medium">{label}</span>
+        <span className="mt-0.5 block text-xs text-muted-foreground">
+          {checked
+            ? `${dayName} ikut dihitung sebagai durasi.`
+            : `${dayName} dikecualikan dari durasi dan distribusi.`}
+        </span>
+      </span>
+      <Switch
+        checked={checked}
+        disabled={disabled}
+        aria-label={`Hitung ${dayName} sebagai hari kerja`}
+        onCheckedChange={(next) =>
+          run(async () => {
+            const result = await setWeekendDayAction(projectId, day, next);
+            if (result.ok) {
+              toast.success(
+                next ? `${dayName} dihitung sebagai hari kerja.` : `${dayName} dikecualikan.`,
+              );
+            }
+            return result;
+          })
+        }
+      />
+    </label>
   );
 }

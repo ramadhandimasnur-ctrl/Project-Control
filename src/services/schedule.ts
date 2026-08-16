@@ -50,7 +50,7 @@ export const getWorkCalendar = cache(async function getWorkCalendar(
   projectId: string,
 ): Promise<WorkCalendar> {
   const [project] = await db
-    .select({ countWeekends: projects.countWeekends })
+    .select({ countSaturday: projects.countSaturday, countSunday: projects.countSunday })
     .from(projects)
     .where(eq(projects.id, projectId))
     .limit(1);
@@ -63,7 +63,8 @@ export const getWorkCalendar = cache(async function getWorkCalendar(
     .where(eq(projectHolidays.projectId, projectId));
 
   return {
-    countWeekends: project.countWeekends,
+    countSaturday: project.countSaturday,
+    countSunday: project.countSunday,
     holidays: new Set(rows.map((row) => row.holidayDate)),
   };
 });
@@ -156,18 +157,26 @@ export async function deleteHoliday(
   });
 }
 
-/** Switches whether Saturdays and Sundays are worked. */
-export async function setCountWeekends(
+/**
+ * Switches whether a given weekend day is worked.
+ *
+ * One day at a time rather than a pair, because six-day weeks are the normal
+ * arrangement on site and a single switch forced them to be described as
+ * either seven or five.
+ */
+export async function setWeekendDay(
   user: SessionUser,
   projectId: string,
-  countWeekends: boolean,
+  day: 'SATURDAY' | 'SUNDAY',
+  counts: boolean,
 ): Promise<void> {
   const access = await assertProjectAccess(user.id, projectId, 'ENGINEER');
+  const patch = day === 'SATURDAY' ? { countSaturday: counts } : { countSunday: counts };
 
   await withUser(user.id, async (tx) => {
     await tx
       .update(projects)
-      .set({ countWeekends, updatedBy: user.id })
+      .set({ ...patch, updatedBy: user.id })
       .where(eq(projects.id, projectId));
 
     await writeAuditLog(tx, {
@@ -176,7 +185,7 @@ export async function setCountWeekends(
       tableName: 'projects',
       recordId: projectId,
       action: 'UPDATE',
-      after: { countWeekends },
+      after: patch,
       actorId: user.id,
     });
   });
@@ -771,7 +780,7 @@ export type ScheduleOverview = {
   projectEnd: string;
   periodType: PeriodType;
   /** Serialisable form of the working calendar, for the client components. */
-  workCalendar: { countWeekends: boolean; holidays: string[] };
+  workCalendar: { countSaturday: boolean; countSunday: boolean; holidays: string[] };
   periods: PeriodRow[];
   rows: GanttRow[];
   /** workItemId â†’ periodId â†’ planned share, only the non-zero cells. */
@@ -911,7 +920,8 @@ export const getScheduleOverview = cache(async function getScheduleOverview(
     projectEnd: project.endDate,
     periodType: project.periodType,
     workCalendar: {
-      countWeekends: calendar.countWeekends,
+      countSaturday: calendar.countSaturday,
+      countSunday: calendar.countSunday,
       holidays: [...calendar.holidays].sort(),
     },
     periods,

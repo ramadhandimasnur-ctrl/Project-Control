@@ -85,6 +85,20 @@
       "when": 1786874894368,
       "tag": "0011_work_item_direct_prices",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786878557715,
+      "tag": "0012_weekend_days_add",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786878576382,
+      "tag": "0013_weekend_days_drop",
+      "breakpoints": true
     }
   ]
 }

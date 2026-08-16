@@ -19,7 +19,7 @@ import {
   savePlannedDistribution,
   savePlannedDistributions,
   saveWorkItemSchedule,
-  setCountWeekends,
+  setWeekendDay,
   type PeriodPlanPreview,
 } from '@/services/schedule';
 import { requireSessionUser } from '@/services/session';
@@ -51,13 +51,14 @@ function revalidateSchedule(projectId: string): void {
 
 // --- working calendar -------------------------------------------------------
 
-export async function setCountWeekendsAction(
+export async function setWeekendDayAction(
   projectId: string,
-  countWeekends: boolean,
+  day: 'SATURDAY' | 'SUNDAY',
+  counts: boolean,
 ): Promise<ActionResult> {
   try {
     const user = await requireSessionUser();
-    await setCountWeekends(user, projectId, countWeekends);
+    await setWeekendDay(user, projectId, day, counts);
   } catch (error) {
     return failure(error);
   }

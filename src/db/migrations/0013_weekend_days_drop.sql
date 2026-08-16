@@ -1,0 +1,1 @@
+ALTER TABLE "projects" DROP COLUMN "count_weekends";

@@ -312,7 +312,8 @@ describe.skipIf(!ready)('Jadwal & baseline', () => {
       `;
       expect(before[0]?.duration_days).toBe(10);
 
-      await schedule.setCountWeekends(user, projectId, false);
+      await schedule.setWeekendDay(user, projectId, 'SATURDAY', false);
+      await schedule.setWeekendDay(user, projectId, 'SUNDAY', false);
       await schedule.saveWorkItemSchedule(user, projectId, itemA, dates);
 
       // 5–14 Jan 2026 contains one Saturday and one Sunday.
@@ -320,6 +321,28 @@ describe.skipIf(!ready)('Jadwal & baseline', () => {
         SELECT duration_days FROM work_item_schedules WHERE work_item_id = ${itemA}
       `;
       expect(after[0]?.duration_days).toBe(8);
+    });
+
+    /*
+     * The six-day week, which the previous single switch could not express at
+     * all: the project either worked Sundays or lost its Saturdays.
+     */
+    it('menghitung Sabtu sebagai hari kerja saat hanya Minggu yang diliburkan', async () => {
+      await schedule.setWeekendDay(user, projectId, 'SUNDAY', false);
+
+      await schedule.saveWorkItemSchedule(user, projectId, itemA, {
+        plannedStart: '2026-01-05',
+        plannedFinish: '2026-01-14',
+        predecessorId: null,
+        dependencyType: 'FS',
+        lagDays: 0,
+      });
+
+      // Only Sunday the 11th drops out of the ten-day span.
+      const [row] = await sql<{ duration_days: number }[]>`
+        SELECT duration_days FROM work_item_schedules WHERE work_item_id = ${itemA}
+      `;
+      expect(row?.duration_days).toBe(9);
     });
 
     it('mengecualikan hari libur yang dicatat', async () => {
@@ -343,7 +366,8 @@ describe.skipIf(!ready)('Jadwal & baseline', () => {
     });
 
     it('menolak rentang yang seluruhnya jatuh pada hari non-kerja', async () => {
-      await schedule.setCountWeekends(user, projectId, false);
+      await schedule.setWeekendDay(user, projectId, 'SATURDAY', false);
+      await schedule.setWeekendDay(user, projectId, 'SUNDAY', false);
 
       await expect(
         schedule.saveWorkItemSchedule(user, projectId, itemA, {

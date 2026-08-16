@@ -108,8 +108,21 @@ export default async function SchedulePage({ params }: { params: Promise<{ id: s
             ) : (
               <Badge variant="outline">Belum ada baseline</Badge>
             )}
-            {!overview.workCalendar.countWeekends ? (
-              <Badge variant="outline">Tanpa akhir pekan</Badge>
+            {/*
+              Names the days that are actually excluded. "Tanpa akhir pekan" was
+              only ever right for the five-day case, and a six-day project would
+              have read it as a statement that its Saturdays were not counted.
+            */}
+            {!overview.workCalendar.countSaturday || !overview.workCalendar.countSunday ? (
+              <Badge variant="outline">
+                Libur{' '}
+                {[
+                  overview.workCalendar.countSaturday ? null : 'Sabtu',
+                  overview.workCalendar.countSunday ? null : 'Minggu',
+                ]
+                  .filter(Boolean)
+                  .join(' & ')}
+              </Badge>
             ) : null}
             {overview.workCalendar.holidays.length > 0 ? (
               <Badge variant="outline">
@@ -120,7 +133,8 @@ export default async function SchedulePage({ params }: { params: Promise<{ id: s
 
           <WorkCalendarPanel
             projectId={projectId}
-            countWeekends={overview.workCalendar.countWeekends}
+            countSaturday={overview.workCalendar.countSaturday}
+            countSunday={overview.workCalendar.countSunday}
             holidays={holidays}
             canEdit={canEdit}
           />

@@ -227,8 +227,14 @@ describe('normalizeToOne', () => {
 
 describe('kalender kerja', () => {
   // 2026-01-03 is a Saturday, 2026-01-04 a Sunday.
-  const noWeekends = { countWeekends: false, holidays: new Set<string>() };
-  const withHoliday = { countWeekends: false, holidays: new Set(['2026-01-06']) };
+  const noWeekends = { countSaturday: false, countSunday: false, holidays: new Set<string>() };
+  const withHoliday = {
+    countSaturday: false,
+    countSunday: false,
+    holidays: new Set(['2026-01-06']),
+  };
+  /** The six-day week the single weekend switch could not describe. */
+  const sundayOff = { countSaturday: true, countSunday: false, holidays: new Set<string>() };
 
   it('counts every day when the project works weekends', () => {
     expect(durationBetween('2026-01-01', '2026-01-07')).toBe(7);
@@ -240,6 +246,19 @@ describe('kalender kerja', () => {
     expect(isWorkingDay('2026-01-04', noWeekends)).toBe(false);
     expect(isWorkingDay('2026-01-05', noWeekends)).toBe(true);
     expect(durationBetween('2026-01-01', '2026-01-07', noWeekends)).toBe(5);
+  });
+
+  /*
+   * The whole reason the pair was split: six-day weeks are the ordinary site
+   * arrangement, and describing one as either five or seven days is wrong by
+   * about four days a month.
+   */
+  it('keeps Saturday while dropping Sunday', () => {
+    expect(isWorkingDay('2026-01-03', sundayOff)).toBe(true);
+    expect(isWorkingDay('2026-01-04', sundayOff)).toBe(false);
+    expect(durationBetween('2026-01-01', '2026-01-07', sundayOff)).toBe(6);
+    // Friday the 2nd plus five working days skips only Sunday the 4th.
+    expect(finishFromDuration('2026-01-02', 5, sundayOff)).toBe('2026-01-07');
   });
 
   it('drops a declared holiday whatever day it falls on', () => {

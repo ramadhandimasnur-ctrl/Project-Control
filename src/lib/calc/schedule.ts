@@ -65,8 +65,10 @@ const toISO = (date: Date): string => formatDate(date, ISO);
  * is late.
  */
 export type WorkCalendar = {
-  /** True when Saturdays and Sundays count as working days. */
-  countWeekends: boolean;
+  /** True when Saturdays count as working days. */
+  countSaturday: boolean;
+  /** True when Sundays count as working days. */
+  countSunday: boolean;
   /** ISO dates excluded regardless of what day of the week they fall on. */
   holidays: ReadonlySet<string>;
 };
@@ -78,14 +80,27 @@ export type WorkCalendar = {
  * a project that has not configured one — the feature has to be switched on
  * deliberately rather than silently reinterpreting existing schedules.
  */
-export const ALL_DAYS: WorkCalendar = { countWeekends: true, holidays: new Set() };
+export const ALL_DAYS: WorkCalendar = {
+  countSaturday: true,
+  countSunday: true,
+  holidays: new Set(),
+};
+
+/**
+ * True when the calendar excludes nothing, so the callers below can take the
+ * cheap arithmetic path instead of walking the range a day at a time.
+ */
+function countsEveryDay(calendar: WorkCalendar): boolean {
+  return calendar.countSaturday && calendar.countSunday && calendar.holidays.size === 0;
+}
 
 export function isWorkingDay(isoDate: string, calendar: WorkCalendar = ALL_DAYS): boolean {
   if (calendar.holidays.has(isoDate)) return false;
-  if (calendar.countWeekends) return true;
 
   const day = parseISO(isoDate).getDay();
-  return day !== 0 && day !== 6;
+  if (day === 6) return calendar.countSaturday;
+  if (day === 0) return calendar.countSunday;
+  return true;
 }
 
 /**
@@ -122,7 +137,7 @@ export function durationBetween(
   endDate: string,
   calendar: WorkCalendar = ALL_DAYS,
 ): number {
-  if (calendar === ALL_DAYS || (calendar.countWeekends && calendar.holidays.size === 0)) {
+  if (calendar === ALL_DAYS || countsEveryDay(calendar)) {
     return differenceInCalendarDays(parseISO(endDate), parseISO(startDate)) + 1;
   }
   return workingDaysBetween(startDate, endDate, calendar);
@@ -143,7 +158,7 @@ export function finishFromDuration(
 ): string {
   if (durationDays < 1) throw new RangeError('Durasi minimal 1 hari.');
 
-  if (calendar.countWeekends && calendar.holidays.size === 0) {
+  if (countsEveryDay(calendar)) {
     return toISO(addDays(parseISO(startDate), durationDays - 1));
   }
 
@@ -303,7 +318,7 @@ export function overlapDays(
   const start = differenceInCalendarDays(parseISO(aStart), parseISO(bStart)) > 0 ? aStart : bStart;
   const end = differenceInCalendarDays(parseISO(aEnd), parseISO(bEnd)) < 0 ? aEnd : bEnd;
 
-  if (calendar.countWeekends && calendar.holidays.size === 0) {
+  if (countsEveryDay(calendar)) {
     const days = differenceInCalendarDays(parseISO(end), parseISO(start)) + 1;
     return days > 0 ? days : 0;
   }

@@ -37,13 +37,19 @@ export const projects = pgTable(
     periodType: periodTypeEnum('period_type').notNull().default('WEEK'),
 
     /*
-     * Whether Saturdays and Sundays are worked.
+     * Whether Saturdays and Sundays are worked, asked separately.
      *
-     * Defaults to true so existing projects keep the durations they were
-     * planned with; switching it off is a deliberate act that reinterprets the
-     * schedule, not something a migration should do on anyone's behalf.
+     * One switch for the pair could not describe the common Indonesian site
+     * arrangement — full day Saturday, nothing Sunday — so a project that works
+     * six days was forced to choose between inventing a Sunday or losing a
+     * Saturday from every duration it computed.
+     *
+     * Both default to true so existing projects keep the durations they were
+     * planned with; switching either off is a deliberate act that reinterprets
+     * the schedule, not something a migration should do on anyone's behalf.
      */
-    countWeekends: boolean('count_weekends').notNull().default(true),
+    countSaturday: boolean('count_saturday').notNull().default(true),
+    countSunday: boolean('count_sunday').notNull().default(true),
 
     // Tax and retention rates are project configuration — never hardcoded.
     retentionPercent: percent('retention_percent').notNull().default('0'),

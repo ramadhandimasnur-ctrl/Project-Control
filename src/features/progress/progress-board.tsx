@@ -181,12 +181,19 @@ export function ProgressBoardView({
         ) : null}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border">
-        <Table>
+      {/*
+        One scroll container, not two. `Table` already renders its own
+        `w-full overflow-x-auto` wrapper, so the border sits outside it and the
+        scrolling happens inside — the earlier arrangement nested a scroller in
+        a scroller, and the right-hand action column ended up clipped by the
+        outer one instead of reachable by scrolling the inner one.
+      */}
+      <div className="w-full rounded-lg border">
+        <Table className="min-w-max">
           <TableHeader>
             <TableRow>
               <TableHead className="w-20">Kode</TableHead>
-              <TableHead>Uraian</TableHead>
+              <TableHead className="min-w-56">Uraian</TableHead>
               <TableHead className="w-24 text-right">Bobot</TableHead>
               <TableHead className="w-28 text-right">{columns.previous}</TableHead>
               <TableHead className="w-28 text-right">{columns.current}</TableHead>
@@ -195,7 +202,11 @@ export function ProgressBoardView({
               <TableHead className="w-28 text-right">Deviasi</TableHead>
               <TableHead className="w-28">Status</TableHead>
               {board.requireChecklist ? <TableHead className="w-24">Mutu</TableHead> : null}
-              <TableHead className="w-64" />
+              {/*
+                Wide enough for the busiest row a draft entry produces —
+                Perbaiki, Batalkan, Mutu, Ajukan and the delete icon together.
+              */}
+              <TableHead className="w-[26rem]" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -303,7 +314,14 @@ export function ProgressBoardView({
                   ) : null}
 
                   <TableCell>
-                    <div className="flex justify-end gap-1">
+                    {/*
+                      `w-max` rather than a plain flex row: flex children may
+                      shrink below their own content, and the buttons were
+                      losing their labels a few pixels at a time before anything
+                      looked wide enough to scroll. Sized to its content and
+                      pushed right, the group either fits or the table scrolls.
+                    */}
+                    <div className="ml-auto flex w-max items-center justify-end gap-1.5 whitespace-nowrap">
                       {/*
                         A milestone item is never given a percentage box: its
                         figure is derived from the stages, and typing over it
