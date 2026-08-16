@@ -8,6 +8,7 @@ import { listMilestones, recordMilestoneProgress } from '@/services/milestones';
 import {
   approveManyProgressEntries,
   approveProgressEntry,
+  cancelProgressEntry,
   deleteProgressEntry,
   pendingEntryIds,
   rejectProgressEntry,
@@ -97,6 +98,22 @@ export async function approveProgressAction(
   try {
     const user = await requireSessionUser();
     await approveProgressEntry(user, projectId, entryId);
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidateProgress(projectId);
+  return { ok: true };
+}
+
+export async function cancelProgressAction(
+  projectId: string,
+  entryId: string,
+  reason?: string,
+): Promise<ActionResult> {
+  try {
+    const user = await requireSessionUser();
+    await cancelProgressEntry(user, projectId, entryId, reason ?? null);
   } catch (error) {
     return failure(error);
   }

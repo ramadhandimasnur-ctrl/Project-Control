@@ -11,7 +11,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { coefficient, day, money, primaryId } from './_shared';
+import { coefficient, day, money, percent, primaryId } from './_shared';
 import { priceTypeEnum, resourceTypeEnum, unitDimensionEnum } from './enums';
 import { auditColumns, organizations } from './org';
 import { projects } from './projects';
@@ -76,6 +76,15 @@ export const resources = pgTable(
     type: resourceTypeEnum('type').notNull(),
     /** Procurement lead time, consumed by the capital-requirement model. */
     leadTimeDays: integer('lead_time_days').notNull().default(0),
+    /**
+     * Markup used to derive the RAB price from the RAP price, as a fraction.
+     *
+     * A remembered preference, not a computed column: the price book stores
+     * what was actually agreed on a date, and deriving RAB at read time would
+     * rewrite last year's budget the moment someone revised the margin. Null
+     * means the two prices are simply kept independent.
+     */
+    priceMarkupPercent: percent('price_markup_percent'),
     isActive: boolean('is_active').notNull().default(true),
     notes: text('notes'),
     ...auditColumns(),
@@ -84,6 +93,9 @@ export const resources = pgTable(
     uniqueIndex('resources_org_code_unique').on(t.orgId, t.code),
     index('resources_org_type_idx').on(t.orgId, t.type),
     check('resources_lead_time_nonneg', sql`${t.leadTimeDays} >= 0`),
+    // A negative markup would price RAB below RAP, which is a loss dressed as
+    // a budget. Zero is allowed: some items are billed at cost.
+    check('resources_price_markup_nonneg', sql`${t.priceMarkupPercent} IS NULL OR ${t.priceMarkupPercent} >= 0`),
   ],
 );
 

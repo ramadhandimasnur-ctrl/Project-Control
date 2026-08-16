@@ -23,6 +23,7 @@ import {
 import { ZERO, toDecimal } from '@/lib/calc/decimal';
 import { PROGRESS_STATUS_LABELS } from '@/lib/calc/progress';
 import { EMPTY_VALUE, formatDay, formatPercent, formatQuantity } from '@/lib/format';
+import { PROGRESS_ENTRY_STATUS_LABELS } from '@/lib/progress/labels';
 import {
   getProgressBoard,
   getProgressComparison,
@@ -38,12 +39,7 @@ function sumOf(rows: readonly ProgressBoardRow[], pick: (row: ProgressBoardRow) 
   return rows.reduce((acc, row) => acc.plus(toDecimal(pick(row))), ZERO);
 }
 
-const STATUS_LABELS = {
-  DRAFT: 'Draf',
-  SUBMITTED: 'Diajukan',
-  APPROVED: 'Disetujui',
-  REJECTED: 'Ditolak',
-} as const;
+const STATUS_LABELS = PROGRESS_ENTRY_STATUS_LABELS;
 
 /**
  * Site inspection report for one period, laid out to be printed.

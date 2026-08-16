@@ -6,11 +6,12 @@ import { toUserMessage } from '@/lib/errors';
 import {
   categoryFormSchema,
   priceFormSchema,
+  pricePairFormSchema,
   resourceFormSchema,
   supplierFormSchema,
   unitFormSchema,
 } from '@/lib/validation/master-data';
-import { setPrice } from '@/services/prices';
+import { setPrice, setPricePair } from '@/services/prices';
 import {
   createCategory,
   deleteCategory,
@@ -183,6 +184,42 @@ export async function deleteCategoryAction(categoryId: string): Promise<ActionRe
 }
 
 // --- prices -----------------------------------------------------------------
+
+export async function addPricePairAction(
+  resourceId: string,
+  raw: unknown,
+): Promise<ActionResult> {
+  const parsed = pricePairFormSchema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: 'Periksa kembali isian formulir.',
+      fieldErrors: fieldErrorsOf(parsed.error.issues),
+    };
+  }
+
+  try {
+    const user = await requireSessionUser();
+    await setPricePair(user, {
+      resourceId,
+      // Organisation catalogue price. Project overrides are entered from the
+      // project, where the override genuinely belongs.
+      projectId: null,
+      priceRap: parsed.data.priceRap,
+      priceRab: parsed.data.priceRab,
+      markupPercent: parsed.data.markupPercent,
+      effectiveFrom: parsed.data.effectiveFrom,
+      source: parsed.data.source,
+      note: parsed.data.note,
+    });
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidateCatalogue();
+  revalidatePath(`/master-data/resources/${resourceId}`);
+  return { ok: true };
+}
 
 export async function addPriceAction(resourceId: string, raw: unknown): Promise<ActionResult> {
   const parsed = priceFormSchema.safeParse(raw);

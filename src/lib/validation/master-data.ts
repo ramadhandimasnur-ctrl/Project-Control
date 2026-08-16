@@ -144,3 +144,77 @@ export const PRICE_FORM_DEFAULTS = {
   source: '',
   note: '',
 } satisfies PriceFormInput;
+
+/**
+ * Both prices in one submission.
+ *
+ * Either may be left blank, which means "leave that one alone" rather than
+ * "set it to zero" — a price of nothing and no price at all are different
+ * statements, and the estimate treats them differently.
+ */
+const optionalPrice = (label: string) =>
+  z.union([z.string(), z.number(), z.null(), z.undefined()]).transform((raw, ctx): string | null => {
+    if (raw === null || raw === undefined) return null;
+    const text = typeof raw === 'number' ? String(raw) : raw.trim();
+    if (text === '') return null;
+
+    const parsed = moneyField(label).safeParse(text);
+    if (!parsed.success) {
+      ctx.addIssue({
+        code: 'custom',
+        message: parsed.error.issues[0]?.message ?? `${label} tidak valid.`,
+      });
+      return z.NEVER;
+    }
+    return parsed.data;
+  });
+
+/** Percentage as typed, e.g. "15" for 15%. Blank means no markup is kept. */
+const optionalMarkup = z
+  .union([z.string(), z.number(), z.null(), z.undefined()])
+  .transform((raw, ctx): string | null => {
+    if (raw === null || raw === undefined) return null;
+    const text = typeof raw === 'number' ? String(raw) : raw.trim();
+    if (text === '') return null;
+
+    const value = Number(text);
+    if (!Number.isFinite(value)) {
+      ctx.addIssue({ code: 'custom', message: 'Markup harus berupa angka.' });
+      return z.NEVER;
+    }
+    if (value < 0) {
+      ctx.addIssue({ code: 'custom', message: 'Markup tidak boleh negatif.' });
+      return z.NEVER;
+    }
+    if (value > 1000) {
+      ctx.addIssue({ code: 'custom', message: 'Markup maksimal 1000%.' });
+      return z.NEVER;
+    }
+    return text;
+  });
+
+export const pricePairFormSchema = z
+  .object({
+    priceRap: optionalPrice('Harga RAP'),
+    priceRab: optionalPrice('Harga RAB'),
+    markupPercent: optionalMarkup,
+    effectiveFrom: dayField('Tanggal berlaku'),
+    source: optionalText(200),
+    note: optionalText(500),
+  })
+  .refine((v) => v.priceRap !== null || v.priceRab !== null, {
+    message: 'Isi setidaknya salah satu harga.',
+    path: ['priceRap'],
+  });
+
+export type PricePairFormInput = z.input<typeof pricePairFormSchema>;
+export type PricePairFormValues = z.output<typeof pricePairFormSchema>;
+
+export const PRICE_PAIR_FORM_DEFAULTS = {
+  priceRap: '',
+  priceRab: '',
+  markupPercent: '',
+  effectiveFrom: '',
+  source: '',
+  note: '',
+} satisfies PricePairFormInput;

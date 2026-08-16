@@ -3,6 +3,7 @@
 import {
   Ban,
   CheckCheck,
+  CircleSlash,
   ClipboardCheck,
   ListChecks,
   Loader2,
@@ -40,6 +41,11 @@ import {
 import { selectClassName } from '@/features/master-data/form-fields';
 import { ZERO, toDecimal } from '@/lib/calc/decimal';
 import { EMPTY_VALUE, formatPercent } from '@/lib/format';
+import {
+  PROGRESS_ENTRY_STATUS_LABELS,
+  PROGRESS_ENTRY_STATUS_VARIANTS,
+  isEditableProgressStatus,
+} from '@/lib/progress/labels';
 import { PROGRESS_COLUMN_LABELS } from '@/lib/reports/labels';
 import { cn } from '@/lib/utils';
 import { type ProgressBoard, type ProgressBoardRow } from '@/services/progress';
@@ -47,6 +53,7 @@ import { type ProgressBoard, type ProgressBoardRow } from '@/services/progress';
 import {
   approveAllAction,
   approveProgressAction,
+  cancelProgressAction,
   deleteProgressAction,
   rejectProgressAction,
   submitProgressAction,
@@ -77,19 +84,8 @@ function sumWeighted(rows: readonly ProgressBoardRow[]) {
   };
 }
 
-const STATUS_LABELS = {
-  DRAFT: 'Draf',
-  SUBMITTED: 'Diajukan',
-  APPROVED: 'Disetujui',
-  REJECTED: 'Ditolak',
-} as const;
-
-const STATUS_VARIANTS = {
-  DRAFT: 'outline',
-  SUBMITTED: 'default',
-  APPROVED: 'secondary',
-  REJECTED: 'destructive',
-} as const;
+const STATUS_LABELS = PROGRESS_ENTRY_STATUS_LABELS;
+const STATUS_VARIANTS = PROGRESS_ENTRY_STATUS_VARIANTS;
 
 export function ProgressBoardView({
   projectId,
@@ -309,7 +305,13 @@ export function ProgressBoardView({
                         figure is derived from the stages, and typing over it
                         would let the two disagree.
                       */}
-                      {canRecord && row.status !== 'APPROVED' ? (
+                      {/*
+                        Mirrors the service rule rather than "not approved":
+                        a submitted entry is on someone's desk, and editing the
+                        figure under a pending decision means the approver signs
+                        off something they never read. Withdraw it first.
+                      */}
+                      {canRecord && isEditableProgressStatus(row.status) ? (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -319,7 +321,9 @@ export function ProgressBoardView({
                               ? 'Pekerjaan ini sudah 100% selesai.'
                               : row.method === 'MILESTONE'
                                 ? 'Progres dihitung dari tahapan yang selesai.'
-                                : undefined
+                                : row.status === 'CANCELLED'
+                                  ? 'Catatan dibatalkan; angkanya dapat diperbaiki di sini.'
+                                  : undefined
                           }
                           onClick={() =>
                             row.method === 'MILESTONE' ? setStaging(row) : setRecording(row)
@@ -330,8 +334,61 @@ export function ProgressBoardView({
                           ) : (
                             <SquarePen className="size-3.5" aria-hidden />
                           )}
-                          {row.method === 'MILESTONE' ? 'Tahapan' : 'Catat'}
+                          {row.method === 'MILESTONE'
+                            ? 'Tahapan'
+                            : row.status === null
+                              ? 'Catat'
+                              : 'Perbaiki'}
                         </Button>
+                      ) : null}
+
+                      {/*
+                        Withdrawing is the way back from a submitted entry, and
+                        the way to retract a draft without deleting the trace
+                        that it was once claimed.
+                      */}
+                      {canRecord &&
+                      row.entryId &&
+                      (row.status === 'DRAFT' ||
+                        row.status === 'SUBMITTED' ||
+                        row.status === 'REJECTED') ? (
+                        <AlertDialog>
+                          <AlertDialogTrigger
+                            render={<Button variant="ghost" size="sm" disabled={busy} />}
+                          >
+                            <CircleSlash className="size-3.5" aria-hidden />
+                            Batalkan
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Batalkan catatan {row.code}?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Catatannya tetap tersimpan sebagai dibatalkan, tidak menghitung apa
+                                pun pada kurva realisasi, dan angkanya dapat diperbaiki kembali
+                                setelahnya.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Tidak jadi</AlertDialogCancel>
+                              <Button
+                                variant="destructive"
+                                disabled={pending}
+                                onClick={() =>
+                                  run(row.workItemId, async () => {
+                                    const result = await cancelProgressAction(
+                                      projectId,
+                                      row.entryId!,
+                                    );
+                                    if (result.ok) toast.success('Catatan dibatalkan.');
+                                    return result;
+                                  })
+                                }
+                              >
+                                Ya, batalkan
+                              </Button>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       ) : null}
 
                       {canRecord && board.requireChecklist && board.selectedPeriodId ? (

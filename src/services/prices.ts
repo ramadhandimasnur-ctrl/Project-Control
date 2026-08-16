@@ -5,7 +5,7 @@ import { and, asc, desc, eq, inArray, isNull, lte, or } from 'drizzle-orm';
 import { db, type DbExecutor } from '@/db';
 import { withUser } from '@/db/context';
 import { resourcePrices, resources, units } from '@/db/schema';
-import { type Decimal, toDecimal } from '@/lib/calc/decimal';
+import { type Decimal, toDecimal, toPercentString } from '@/lib/calc/decimal';
 import {
   priceOrigin,
   selectEffectivePrice,
@@ -13,7 +13,7 @@ import {
   type PriceOrigin,
   type PriceType,
 } from '@/lib/calc/price';
-import { AppError, notFound } from '@/lib/errors';
+import { AppError, notFound, validation } from '@/lib/errors';
 
 import { assertOrgAccess } from './org-access';
 import { assertProjectAccess } from './access';
@@ -254,6 +254,122 @@ export type SetPriceInput = {
  * ENGINEER on that project, because negotiating a project-specific rate is
  * part of building its estimate.
  */
+export type SetPricePairInput = {
+  resourceId: string;
+  projectId: string | null;
+  /** Null leaves that price type untouched. */
+  priceRap: string | null;
+  priceRab: string | null;
+  /** Percentage as typed ("15" for 15%). Null clears the stored preference. */
+  markupPercent: string | null;
+  effectiveFrom: string;
+  source?: string | null;
+  note?: string | null;
+};
+
+/**
+ * Writes RAB and RAP together, and remembers the markup that relates them.
+ *
+ * One transaction rather than two calls: setting one price and failing on the
+ * other would leave the pair inconsistent on the same effective date, and the
+ * estimate would price the work from a half-applied revision.
+ *
+ * The markup is stored on the resource, not applied at read time. The price
+ * book records what was agreed on a date; deriving RAB from RAP whenever it is
+ * read would rewrite last year's budget the moment someone revised the margin.
+ */
+export async function setPricePair(user: SessionUser, input: SetPricePairInput): Promise<void> {
+  const access =
+    input.projectId === null
+      ? await assertOrgAccess(user.id, 'ADMIN')
+      : await assertProjectAccess(user.id, input.projectId, 'ENGINEER');
+
+  const [resource] = await db
+    .select({ id: resources.id, orgId: resources.orgId, name: resources.name })
+    .from(resources)
+    .where(eq(resources.id, input.resourceId))
+    .limit(1);
+
+  if (!resource || resource.orgId !== access.orgId) {
+    throw notFound('Sumber daya tidak ditemukan di organisasi ini.');
+  }
+
+  if (input.priceRap === null && input.priceRab === null) {
+    throw validation('Isi setidaknya salah satu harga.');
+  }
+
+  const pairs = (
+    [
+      ['RAP', input.priceRap],
+      ['RAB', input.priceRab],
+    ] as const
+  ).filter((entry): entry is readonly ['RAP' | 'RAB', string] => entry[1] !== null);
+
+  await withUser(user.id, async (tx) => {
+    for (const [priceType, price] of pairs) {
+      // Re-entering the same effective date replaces that row rather than
+      // colliding with the unique index; the history keeps one entry per date.
+      await tx
+        .delete(resourcePrices)
+        .where(
+          and(
+            eq(resourcePrices.resourceId, input.resourceId),
+            eq(resourcePrices.priceType, priceType),
+            eq(resourcePrices.effectiveFrom, input.effectiveFrom),
+            input.projectId === null
+              ? isNull(resourcePrices.projectId)
+              : eq(resourcePrices.projectId, input.projectId),
+          ),
+        );
+
+      await tx.insert(resourcePrices).values({
+        resourceId: input.resourceId,
+        projectId: input.projectId,
+        priceType,
+        price,
+        effectiveFrom: input.effectiveFrom,
+        source: input.source ?? null,
+        note: input.note ?? null,
+        createdBy: user.id,
+        updatedBy: user.id,
+      });
+    }
+
+    /*
+     * The markup preference is organisation-level data on the resource, so a
+     * project-scoped override does not touch it — one project's negotiated
+     * price should not rewrite the catalogue's margin policy.
+     */
+    if (input.projectId === null) {
+      await tx
+        .update(resources)
+        .set({
+          priceMarkupPercent:
+            input.markupPercent === null
+              ? null
+              : toPercentString(toDecimal(input.markupPercent).dividedBy(100)),
+          updatedBy: user.id,
+        })
+        .where(eq(resources.id, input.resourceId));
+    }
+
+    await writeAuditLog(tx, {
+      orgId: access.orgId,
+      projectId: input.projectId,
+      tableName: 'resource_prices',
+      recordId: input.resourceId,
+      action: 'UPDATE',
+      after: {
+        priceRap: input.priceRap,
+        priceRab: input.priceRab,
+        markupPercent: input.markupPercent,
+        effectiveFrom: input.effectiveFrom,
+      },
+      actorId: user.id,
+    });
+  });
+}
+
 export async function setPrice(user: SessionUser, input: SetPriceInput): Promise<void> {
   const access =
     input.projectId === null

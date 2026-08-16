@@ -84,11 +84,21 @@ export const priceTypeEnum = pgEnum('price_type', ['RAB', 'RAP']);
 // --- Work breakdown & progress --------------------------------------------
 export const progressMethodEnum = pgEnum('progress_method', ['VOLUME', 'PERCENT', 'MILESTONE']);
 export const dependencyTypeEnum = pgEnum('dependency_type', ['FS', 'SS', 'FF', 'SF']);
+/**
+ * CANCELLED is withdrawal, not rejection.
+ *
+ * REJECTED is a supervisor sending work back; CANCELLED is the recorder
+ * retracting their own entry — a wrong work item, a duplicate, a figure typed
+ * against the wrong period. Both stop counting toward the realised curve, and
+ * keeping them apart is what lets a report say whether the site was corrected
+ * or merely mistyped.
+ */
 export const progressStatusEnum = pgEnum('progress_status', [
   'DRAFT',
   'SUBMITTED',
   'APPROVED',
   'REJECTED',
+  'CANCELLED',
 ]);
 export const checklistResultEnum = pgEnum('checklist_result', ['PASS', 'FAIL', 'NA']);
 

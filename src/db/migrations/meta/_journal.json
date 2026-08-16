@@ -57,6 +57,13 @@
       "when": 1786849098958,
       "tag": "0007_user_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786853393229,
+      "tag": "0008_cancel_and_markup",
+      "breakpoints": true
     }
   ]
 }

@@ -34,7 +34,25 @@ import { writeAuditLog } from './audit';
 import { getScheduleOverview } from './schedule';
 import { type SessionUser } from './session';
 
-export type ProgressStatusValue = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
+export type ProgressStatusValue =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'CANCELLED';
+
+/**
+ * States a recorder may still correct in place.
+ *
+ * Approved progress is deliberately absent: it has been signed off, it moves
+ * the curve a client is shown, and the way to change it is a correction in the
+ * current period — not a quiet edit of what someone already approved.
+ */
+const EDITABLE: readonly ProgressStatusValue[] = ['DRAFT', 'REJECTED', 'CANCELLED'];
+
+export function isEditableStatus(status: ProgressStatusValue | null): boolean {
+  return status === null || EDITABLE.includes(status);
+}
 export type ChecklistResult = 'PASS' | 'FAIL' | 'NA';
 
 /** Only approved rows move the realised curve (charter section 5.4). */
@@ -378,11 +396,22 @@ export async function saveProgressEntry(
 
   if (!period) throw validation('Periode tidak dikenal pada proyek ini.');
 
+  /*
+   * A submitted entry is also refused: it is sitting on someone's desk, and
+   * editing the figure underneath a pending decision means the approver signs
+   * off something they never read. Withdraw it first — cancelling returns it
+   * to the recorder, and a cancelled entry is editable again.
+   */
   const existing = await currentEntry(workItemId, periodId);
-  if (existing && existing.status === 'APPROVED') {
+
+  if (existing && !isEditableStatus(existing.status)) {
     throw conflict(
-      'Progres periode ini sudah disetujui.',
-      'Progres yang sudah disetujui tidak dapat diubah; catat koreksinya pada periode berjalan.',
+      existing.status === 'APPROVED'
+        ? 'Progres periode ini sudah disetujui.'
+        : 'Progres periode ini sedang diajukan.',
+      existing.status === 'APPROVED'
+        ? 'Progres yang sudah disetujui tidak dapat diubah; catat koreksinya pada periode berjalan.'
+        : 'Batalkan pengajuannya terlebih dahulu bila angkanya perlu diperbaiki.',
     );
   }
 
@@ -587,6 +616,67 @@ export async function approveProgressEntry(
       action: 'UPDATE',
       before: { status: entry.status },
       after: { status: 'APPROVED', pct: entry.pctThisPeriod },
+      actorId: user.id,
+    });
+  });
+}
+
+/**
+ * Withdraws an entry the recorder no longer stands behind.
+ *
+ * Distinct from deleting: the row stays, so a figure that was once submitted
+ * and then retracted leaves a trace instead of vanishing from the period it
+ * was claimed against. The entry becomes editable again, which is the point —
+ * a wrong work item or a mistyped quantity is corrected in place rather than
+ * re-entered from nothing.
+ *
+ * Approved progress cannot be cancelled. It has moved the curve a client was
+ * shown, and unwinding it silently is exactly the drift this system exists to
+ * prevent; the remedy is a correction in the current period.
+ */
+export async function cancelProgressEntry(
+  user: SessionUser,
+  projectId: string,
+  entryId: string,
+  reason: string | null = null,
+): Promise<void> {
+  const access = await assertProjectAccess(user.id, projectId, 'FIELD_USER');
+  const entry = await entryById(projectId, entryId);
+
+  if (entry.status === 'APPROVED') {
+    throw conflict(
+      'Progres yang sudah disetujui tidak dapat dibatalkan.',
+      'Catat koreksinya pada periode berjalan agar riwayat persetujuannya tetap utuh.',
+    );
+  }
+
+  if (entry.status === 'CANCELLED') throw conflict('Catatan ini sudah dibatalkan.');
+
+  const trimmed = reason?.trim() ?? '';
+
+  await withUser(user.id, async (tx) => {
+    await tx
+      .update(progressEntries)
+      .set({
+        status: 'CANCELLED',
+        // Reuses the reject-reason column: both answer "why does this row not
+        // count", and a second nearly-identical column would only invite the
+        // two to disagree.
+        rejectReason: trimmed === '' ? null : trimmed,
+        submittedBy: null,
+        submittedAt: null,
+        updatedBy: user.id,
+      })
+      .where(eq(progressEntries.id, entryId));
+
+    await writeAuditLog(tx, {
+      orgId: access.orgId,
+      projectId,
+      tableName: 'progress_entries',
+      recordId: entryId,
+      action: 'UPDATE',
+      before: { status: entry.status },
+      after: { status: 'CANCELLED', reason: trimmed || null },
       actorId: user.id,
     });
   });
