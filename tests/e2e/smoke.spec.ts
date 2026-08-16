@@ -138,17 +138,30 @@ test('dialog harga terisi dari harga yang berlaku', async ({ page }) => {
   await signIn(page);
   await page.goto('/master-data/resources');
 
-  const firstResource = page.locator('a[href^="/master-data/resources/"]').first();
-  const href = await firstResource.getAttribute('href');
-  expect(href, 'butuh minimal satu sumber daya; jalankan npm run db:seed').toBeTruthy();
+  /*
+   * Deliberately a resource that already has a price, not simply the first
+   * row. The catalogue also holds items with no price at all, and opening one
+   * of those proves nothing about prefilling — the field is empty because
+   * there is nothing to fill it with.
+   */
+  const pricedRow = page.locator('tbody tr').filter({ hasText: /Rp\s?\d/ }).first();
+
+  if ((await pricedRow.count()) === 0) {
+    test.skip(true, 'tidak ada sumber daya berharga; jalankan npm run db:seed');
+    return;
+  }
+
+  const href = await pricedRow
+    .locator('a[href^="/master-data/resources/"]')
+    .first()
+    .getAttribute('href');
+  expect(href).toBeTruthy();
 
   await page.goto(href!);
   await page.getByRole('button', { name: /tambah harga|harga/i }).first().click();
 
   const rap = page.getByLabel(/Harga RAP per/i);
   await expect(rap).toBeVisible();
-
-  // Seeded resources carry a RAP price, so the field must not open empty.
   await expect(rap).not.toHaveValue('');
 
   await expect(page.getByLabel(/Markup RAB atas RAP/i)).toBeVisible();
