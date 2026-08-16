@@ -18,7 +18,7 @@ export default async function LoginPage({
       <p className="mt-4 text-center text-sm text-muted-foreground">
         Belum punya akun?{' '}
         <Link href="/register" className="font-medium text-foreground underline underline-offset-4">
-          Daftar organisasi baru
+          Buat Akun
         </Link>
       </p>
     </div>

@@ -3,7 +3,7 @@ import Link from 'next/link';
 
 import { RegisterForm } from './register-form';
 
-export const metadata: Metadata = { title: 'Daftar' };
+export const metadata: Metadata = { title: 'Buat Akun' };
 
 export default function RegisterPage() {
   return (

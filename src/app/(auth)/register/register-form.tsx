@@ -52,7 +52,7 @@ export function RegisterForm() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Daftar akun</CardTitle>
+        <CardTitle>Buat Akun</CardTitle>
         <CardDescription>
           Pendaftaran ditinjau administrator terlebih dahulu. Anda dapat masuk setelah akun
           disetujui dan perannya ditentukan.
@@ -101,7 +101,7 @@ export function RegisterForm() {
 
           <Button type="submit" className="w-full" disabled={pending}>
             {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-            {pending ? 'Memproses…' : 'Daftar'}
+            {pending ? 'Memproses…' : 'Buat Akun'}
           </Button>
         </form>
       </CardContent>
