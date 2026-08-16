@@ -449,6 +449,7 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
         groupId: null,
         unitId: (await sql`SELECT unit_id FROM work_items WHERE id = ${workItemId}`)[0]!.unit_id,
         volume: '50.0000',
+        volumeRap: null,
         contractUnitPrice: '1250000.00',
         unitPriceRab: null,
         unitPriceRap: null,
@@ -503,7 +504,7 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
         code: 'A.99', name: 'Kosong', spec: null, groupId: null,
         unitId: (await sql`SELECT unit_id FROM work_items WHERE id = ${workItemId}`)[0]!.unit_id,
                 volume: '1.0000', contractUnitPrice: null, progressMethod: 'VOLUME',
-        unitPriceRab: null, unitPriceRap: null, priceMarkupPercent: null,
+        volumeRap: null, unitPriceRab: null, unitPriceRap: null, priceMarkupPercent: null,
         includeInProgressWeight: true, sortOrder: 9,
       });
 

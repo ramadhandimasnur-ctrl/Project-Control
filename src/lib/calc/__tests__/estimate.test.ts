@@ -147,6 +147,76 @@ describe('estimateWorkItem', () => {
 });
 
 /*
+ * Execution does not always build exactly what was sold: earthworks swell,
+ * temporary works get measured differently, an overbuild allowance is agreed.
+ * The cost follows what is built; the revenue follows what was contracted.
+ */
+describe('estimateWorkItem with a separate execution volume', () => {
+  it('costs RAP on the execution volume and RAB on the contracted one', () => {
+    const result = estimateWorkItem({
+      volume: '100',
+      volumeRap: '115',
+      lines: CONCRETE_LINES,
+      contractUnitPrice: '1250000',
+    });
+
+    expect(result.totalRab.toFixed(2)).toBe('112669000.00');
+    // 1.078.650 × 115, not × 100.
+    expect(result.totalRap.toFixed(2)).toBe('124044750.00');
+  });
+
+  /*
+   * Building more than was sold costs money; it does not earn any. A contract
+   * value that followed the execution volume would book revenue for work
+   * nobody agreed to pay for.
+   */
+  it('leaves the contract value on the contracted volume', () => {
+    const result = estimateWorkItem({
+      volume: '100',
+      volumeRap: '115',
+      lines: CONCRETE_LINES,
+      contractUnitPrice: '1250000',
+    });
+
+    expect(result.contractValue.toFixed(2)).toBe('125000000.00');
+    expect(result.margin.toFixed(2)).toBe('955250.00');
+  });
+
+  it('treats a missing execution volume as the contracted one', () => {
+    const explicit = estimateWorkItem({
+      volume: '100',
+      volumeRap: '100',
+      lines: CONCRETE_LINES,
+      contractUnitPrice: null,
+    });
+    const implied = estimateWorkItem({
+      volume: '100',
+      lines: CONCRETE_LINES,
+      contractUnitPrice: null,
+    });
+
+    expect(implied.totalRap.toString()).toBe(explicit.totalRap.toString());
+  });
+
+  /*
+   * Zero is a real answer, not a missing one: a line whose execution volume was
+   * deliberately set to nothing costs nothing, and falling back to the
+   * contracted volume there would quietly re-add the cost.
+   */
+  it('honours an execution volume of zero', () => {
+    const result = estimateWorkItem({
+      volume: '100',
+      volumeRap: '0',
+      lines: CONCRETE_LINES,
+      contractUnitPrice: null,
+    });
+
+    expect(result.totalRap.toString()).toBe('0');
+    expect(result.totalRab.toFixed(2)).toBe('112669000.00');
+  });
+});
+
+/*
  * Lump-sum lines — mobilisation, a site office, a one-off permit — have a price
  * and no analysis worth writing. They may carry the price directly.
  */

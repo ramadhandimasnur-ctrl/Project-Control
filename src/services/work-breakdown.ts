@@ -178,6 +178,8 @@ export type WorkItemRow = {
   unitId: string;
   unitCode: string;
   volume: string;
+  /** Null when execution builds exactly the contracted volume. */
+  volumeRap: string | null;
   contractUnitPrice: string | null;
   unitPriceRab: string | null;
   unitPriceRap: string | null;
@@ -223,6 +225,7 @@ export async function listWorkItems(userId: string, projectId: string): Promise<
       unitId: workItems.unitId,
       unitCode: units.code,
       volume: workItems.volume,
+      volumeRap: workItems.volumeRap,
       contractUnitPrice: workItems.contractUnitPrice,
       unitPriceRab: workItems.unitPriceRab,
       unitPriceRap: workItems.unitPriceRap,
@@ -475,7 +478,11 @@ export async function duplicateWorkItem(
         spec: source.spec,
         unitId: source.unitId,
         volume: source.volume,
+        volumeRap: source.volumeRap,
         contractUnitPrice: source.contractUnitPrice,
+        unitPriceRab: source.unitPriceRab,
+        unitPriceRap: source.unitPriceRap,
+        priceMarkupPercent: source.priceMarkupPercent,
         progressMethod: source.progressMethod,
         includeInProgressWeight: source.includeInProgressWeight,
         sortOrder: source.sortOrder,

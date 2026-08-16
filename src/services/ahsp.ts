@@ -51,6 +51,8 @@ export type AhspLineView = {
 export type WorkItemEstimateView = {
   workItemId: string;
   volume: string;
+  /** Resolved: equal to `volume` unless the item stores a different one. */
+  volumeRap: string;
   unitCostRab: string;
   unitCostRap: string;
   totalRab: string;
@@ -91,6 +93,7 @@ export async function getWorkItemEstimate(
     .select({
       id: workItems.id,
       volume: workItems.volume,
+      volumeRap: workItems.volumeRap,
       contractUnitPrice: workItems.contractUnitPrice,
       unitPriceRab: workItems.unitPriceRab,
       unitPriceRap: workItems.unitPriceRap,
@@ -142,6 +145,8 @@ export async function getWorkItemEstimate(
       ];
 
   const volume = toDecimal(item.volume);
+  // Procurement follows the volume execution actually plans to build.
+  const volumeRap = item.volumeRap === null ? volume : toDecimal(item.volumeRap);
   const wasteMultiplier = (waste: string) => toDecimal(1).plus(toDecimal(waste));
 
   const lines: AhspLineView[] = rows.map((row) => {
@@ -149,7 +154,7 @@ export async function getWorkItemEstimate(
     const priceRap = rap.resolved.get(row.resourceId)?.price ?? null;
 
     const qRab = volume.times(toDecimal(row.coefRab)).times(wasteMultiplier(row.wasteFactor));
-    const qRap = volume.times(toDecimal(row.coefRap)).times(wasteMultiplier(row.wasteFactor));
+    const qRap = volumeRap.times(toDecimal(row.coefRap)).times(wasteMultiplier(row.wasteFactor));
 
     return {
       ...row,
@@ -174,6 +179,7 @@ export async function getWorkItemEstimate(
 
   const estimate = estimateWorkItem({
     volume: item.volume,
+    volumeRap: item.volumeRap,
     lines: estimateLines,
     contractUnitPrice: item.contractUnitPrice,
     markup: project?.defaultMarkup ?? 0,
@@ -195,6 +201,7 @@ export async function getWorkItemEstimate(
   return {
     workItemId,
     volume: item.volume,
+    volumeRap: volumeRap.toString(),
     unitCostRab: estimate.unitCostRab.toFixed(2),
     unitCostRap: estimate.unitCostRap.toFixed(2),
     totalRab: estimate.totalRab.toFixed(2),
@@ -232,6 +239,8 @@ export type ProjectEstimateItem = {
   groupName: string | null;
   unitCode: string;
   volume: string;
+  /** Resolved: equal to `volume` unless the item stores a different one. */
+  volumeRap: string;
   includeInProgressWeight: boolean;
   unitCostRab: string;
   unitCostRap: string;
@@ -307,6 +316,7 @@ export async function getProjectEstimate(
       groupName: workGroups.name,
       unitCode: units.code,
       volume: workItems.volume,
+      volumeRap: workItems.volumeRap,
       contractUnitPrice: workItems.contractUnitPrice,
       unitPriceRab: workItems.unitPriceRab,
       unitPriceRap: workItems.unitPriceRap,
@@ -357,6 +367,7 @@ export async function getProjectEstimate(
     const itemLines = linesByItem.get(item.id) ?? [];
     const estimate = estimateWorkItem({
       volume: item.volume,
+      volumeRap: item.volumeRap,
       lines: itemLines.map((l) => ({
         coefRab: l.coefRab,
         coefRap: l.coefRap,
@@ -366,6 +377,8 @@ export async function getProjectEstimate(
       })),
       contractUnitPrice: item.contractUnitPrice,
       markup: project.defaultMarkup,
+      directUnitRab: item.unitPriceRab,
+      directUnitRap: item.unitPriceRap,
     });
     return { item, estimate, lineCount: itemLines.length };
   });
@@ -406,6 +419,7 @@ export async function getProjectEstimate(
       groupName: item.groupName,
       unitCode: item.unitCode,
       volume: item.volume,
+      volumeRap: item.volumeRap ?? item.volume,
       includeInProgressWeight: item.includeInProgressWeight,
       unitCostRab: estimate.unitCostRab.toFixed(2),
       unitCostRap: estimate.unitCostRap.toFixed(2),

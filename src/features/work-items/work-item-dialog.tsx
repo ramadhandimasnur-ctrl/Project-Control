@@ -78,6 +78,20 @@ export function WorkItemDialog({
    */
   const priceMode = useRef<PriceMode>(defaultValues?.priceMarkupPercent ? 'markup' : 'rab');
 
+  /*
+   * True once the execution volume has been given a value of its own, after
+   * which the contracted volume stops writing into it. An item that already
+   * stores a distinct RAP volume counts as touched from the moment it opens —
+   * otherwise correcting the RAB volume would quietly discard the difference
+   * somebody entered on purpose.
+   */
+  const volumeRapTouched = useRef(String(defaultValues?.volumeRap ?? '').trim() !== '');
+
+  const onVolumeEdit = (value: string) => {
+    if (volumeRapTouched.current) return;
+    setValue('volumeRap', value, { shouldValidate: false });
+  };
+
   const onPriceEdit = (field: 'rap' | 'rab' | 'markup', value: string) => {
     const current = {
       rap: String(getValues('unitPriceRap') ?? ''),
@@ -185,18 +199,46 @@ export function WorkItemDialog({
             />
             <TextField
               id="volume"
-              label="Volume"
+              label="Volume RAB"
               inputMode="decimal"
               disabled={volumeLocked}
               hint={
                 volumeLocked
                   ? 'Diturunkan dari baris take-off, jadi tidak dapat diketik di sini.'
-                  : undefined
+                  : 'Volume kontrak: dasar nilai kontrak dan bobot progres.'
               }
               error={messageOf('volume')}
-              registration={register('volume')}
+              registration={{
+                ...register('volume'),
+                onChange: async (event: React.ChangeEvent<HTMLInputElement>) => {
+                  await register('volume').onChange(event);
+                  onVolumeEdit(event.target.value);
+                },
+              }}
             />
           </div>
+
+          {/*
+            The execution volume, filled from the contracted one until somebody
+            says otherwise. Copying it forward only while it is untouched is the
+            whole trick: the common case needs no second entry, and the rare
+            line that genuinely differs is not overwritten the next time the
+            contracted volume is corrected.
+          */}
+          <TextField
+            id="volumeRap"
+            label="Volume RAP"
+            inputMode="decimal"
+            hint="Volume yang direncanakan dikerjakan. Kosongkan bila sama dengan volume RAB."
+            error={messageOf('volumeRap')}
+            registration={{
+              ...register('volumeRap'),
+              onChange: async (event: React.ChangeEvent<HTMLInputElement>) => {
+                await register('volumeRap').onChange(event);
+                volumeRapTouched.current = event.target.value.trim() !== '';
+              },
+            }}
+          />
 
           {/*
             Direct prices, for lines that carry no AHSP.

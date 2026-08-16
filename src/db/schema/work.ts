@@ -53,6 +53,17 @@ export const workItems = pgTable(
       .notNull()
       .references(() => units.id, { onDelete: 'restrict' }),
     volume: quantity('volume').notNull().default('0'),
+    /*
+     * The volume execution plans to build, when it differs from the contracted
+     * one — loose material after swell, an overbuild allowance, a stretch of
+     * temporary works measured differently on site.
+     *
+     * Null means "same as `volume`". A copy on every row would be two figures
+     * to keep in step, and the copy is the one that goes stale: an edited
+     * take-off would move the contracted volume while the duplicate sat there
+     * quietly costing the old quantity.
+     */
+    volumeRap: quantity('volume_rap'),
 
     /**
      * The authority on revenue (design decision 1). RAB derived from the
@@ -85,6 +96,10 @@ export const workItems = pgTable(
     index('work_items_project_idx').on(t.projectId),
     index('work_items_group_idx').on(t.groupId),
     check('work_items_volume_nonneg', sql`${t.volume} >= 0`),
+    check(
+      'work_items_volume_rap_nonneg',
+      sql`${t.volumeRap} IS NULL OR ${t.volumeRap} >= 0`,
+    ),
     check(
       'work_items_contract_unit_price_nonneg',
       sql`${t.contractUnitPrice} IS NULL OR ${t.contractUnitPrice} >= 0`,

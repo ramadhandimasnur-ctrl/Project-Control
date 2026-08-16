@@ -104,7 +104,18 @@ export type WorkItemEstimate = {
 
 /** Everything the AHSP footer and the RAB/RAP comparison table need. */
 export function estimateWorkItem(input: {
+  /** The contracted volume: what RAB, the contract value and progress all use. */
   volume: Numeric;
+  /**
+   * The volume execution actually plans to build, when it differs.
+   *
+   * Null means "the same as the contracted volume", which is the honest default
+   * — most lines never differ, and storing a copy of the RAB volume on every one
+   * of them would mean two figures to keep in step and one of them silently
+   * going stale. A cut-and-fill line quoted at 1.000 m3 but planned at 1.150 m3
+   * of loose material is the case this exists for.
+   */
+  volumeRap?: Numeric | null;
   lines: readonly EstimateLine[];
   contractUnitPrice?: Numeric | null;
   markup?: Numeric;
@@ -125,6 +136,7 @@ export function estimateWorkItem(input: {
 }): WorkItemEstimate {
   const {
     volume,
+    volumeRap = null,
     lines,
     contractUnitPrice = null,
     markup = 0,
@@ -133,6 +145,7 @@ export function estimateWorkItem(input: {
   } = input;
 
   const hasLines = lines.length > 0;
+  const executedVolume = volumeRap === null ? toDecimal(volume) : toDecimal(volumeRap);
 
   const rabUnit = hasLines
     ? unitCostRab(lines)
@@ -141,7 +154,9 @@ export function estimateWorkItem(input: {
     ? unitCostRap(lines)
     : toDecimal(directUnitRap ?? directUnitRab ?? 0);
   const rab = toDecimal(volume).times(rabUnit);
-  const rap = toDecimal(volume).times(rapUnit);
+  const rap = executedVolume.times(rapUnit);
+  // Revenue follows the contracted volume. Building more than was sold costs
+  // money; it does not earn any.
   const contract = contractValue(volume, contractUnitPrice, rab, markup);
 
   return {

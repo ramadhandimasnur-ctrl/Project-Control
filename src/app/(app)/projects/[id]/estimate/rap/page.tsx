@@ -128,8 +128,21 @@ export default async function RapPage({ params }: { params: Promise<{ id: string
                           </Badge>
                         ) : null}
                       </TableCell>
+                      {/*
+                        The volume this side is costed on, which is not always
+                        the contracted one — swell, overbuild and temporary
+                        works all make execution build more than was sold. The
+                        contracted figure is flagged beneath when they differ,
+                        because a reader comparing this table against the RAB
+                        would otherwise take the gap for an error.
+                      */}
                       <TableCell className="text-right font-mono tabular-nums">
-                        {formatQuantity(item.volume)}
+                        {formatQuantity(item.volumeRap)}
+                        {item.volumeRap === item.volume ? null : (
+                          <span className="block text-[10px] text-muted-foreground">
+                            RAB {formatQuantity(item.volume)}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{item.unitCode}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">

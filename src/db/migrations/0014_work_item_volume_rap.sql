@@ -1,0 +1,2 @@
+ALTER TABLE "work_items" ADD COLUMN "volume_rap" numeric(18, 4);--> statement-breakpoint
+ALTER TABLE "work_items" ADD CONSTRAINT "work_items_volume_rap_nonneg" CHECK ("work_items"."volume_rap" IS NULL OR "work_items"."volume_rap" >= 0);

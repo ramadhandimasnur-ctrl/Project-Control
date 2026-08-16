@@ -154,6 +154,7 @@ export default async function WorkItemsPage({
                     groupId: selected.groupId ?? '',
                     unitId: selected.unitId,
                     volume: selected.volume,
+                    volumeRap: selected.volumeRap ?? '',
                     contractUnitPrice: selected.contractUnitPrice ?? '',
                     unitPriceRab: selected.unitPriceRab ?? '',
                     unitPriceRap: selected.unitPriceRap ?? '',

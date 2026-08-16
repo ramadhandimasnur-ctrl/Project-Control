@@ -79,7 +79,8 @@ export async function getMaterialRequirement(
     .select({
       resourceId: workItemResources.resourceId,
       workItemId: workItems.id,
-      volume: workItems.volume,
+      // Procurement follows what execution plans to build, not what was sold.
+      volume: sql<string>`coalesce(${workItems.volumeRap}, ${workItems.volume})`,
       coefRap: workItemResources.coefRap,
       wasteFactor: workItemResources.wasteFactor,
       resourceCode: resources.code,
@@ -323,7 +324,8 @@ export async function getMaterialScope(
     .select({
       workItemId: workItems.id,
       resourceId: workItemResources.resourceId,
-      volume: workItems.volume,
+      // Procurement follows what execution plans to build, not what was sold.
+      volume: sql<string>`coalesce(${workItems.volumeRap}, ${workItems.volume})`,
       coefRap: workItemResources.coefRap,
       wasteFactor: workItemResources.wasteFactor,
       resourceCode: resources.code,

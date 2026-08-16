@@ -54,6 +54,30 @@ const optionalMoney = (label: string) =>
     return parsed.data;
   });
 
+/**
+ * A quantity that may legitimately be absent.
+ *
+ * Blank becomes null, which for the execution volume means "the same as the
+ * contracted one" — a different statement from zero, which would be a line
+ * nobody plans to build.
+ */
+const optionalQuantity = (label: string) =>
+  z.union([z.string(), z.number(), z.null(), z.undefined()]).transform((raw, ctx): string | null => {
+    if (raw === null || raw === undefined) return null;
+    const text = typeof raw === 'number' ? String(raw) : raw.trim();
+    if (text === '') return null;
+
+    const parsed = quantityField(label).safeParse(text);
+    if (!parsed.success) {
+      ctx.addIssue({
+        code: 'custom',
+        message: parsed.error.issues[0]?.message ?? `${label} tidak valid.`,
+      });
+      return z.NEVER;
+    }
+    return parsed.data;
+  });
+
 export const workItemFormSchema = z.object({
   code: code('Kode pekerjaan'),
   name: name('Uraian pekerjaan'),
@@ -61,6 +85,8 @@ export const workItemFormSchema = z.object({
   groupId: optionalId(),
   unitId: requiredId('Satuan'),
   volume: quantityField('Volume'),
+  /** Blank follows the contracted volume; see the column comment on work_items. */
+  volumeRap: optionalQuantity('Volume RAP'),
   contractUnitPrice: optionalMoney('Harga satuan kontrak'),
   /*
    * Prices typed straight onto the work item, for lines with no AHSP. Blank
@@ -100,6 +126,7 @@ export const WORK_ITEM_FORM_DEFAULTS = {
   groupId: '',
   unitId: '',
   volume: '0',
+  volumeRap: '',
   contractUnitPrice: '',
   unitPriceRab: '',
   unitPriceRap: '',
