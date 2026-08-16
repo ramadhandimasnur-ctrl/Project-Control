@@ -62,6 +62,27 @@ export const workItemFormSchema = z.object({
   unitId: requiredId('Satuan'),
   volume: quantityField('Volume'),
   contractUnitPrice: optionalMoney('Harga satuan kontrak'),
+  /*
+   * Prices typed straight onto the work item, for lines with no AHSP. Blank
+   * means "no direct price", which is different from zero — zero is a line
+   * genuinely costed at nothing.
+   */
+  unitPriceRab: optionalMoney('Harga RAB'),
+  unitPriceRap: optionalMoney('Harga RAP'),
+  priceMarkupPercent: z
+    .union([z.string(), z.number(), z.null(), z.undefined()])
+    .transform((raw, ctx): string | null => {
+      if (raw === null || raw === undefined) return null;
+      const text = typeof raw === 'number' ? String(raw) : raw.trim();
+      if (text === '') return null;
+
+      const value = Number(text);
+      if (!Number.isFinite(value) || value < 0 || value > 1000) {
+        ctx.addIssue({ code: 'custom', message: 'Markup harus antara 0 dan 1000%.' });
+        return z.NEVER;
+      }
+      return text;
+    }),
   progressMethod: z.enum(['VOLUME', 'PERCENT', 'MILESTONE'], {
     message: 'Metode progres wajib dipilih.',
   }),
@@ -80,6 +101,9 @@ export const WORK_ITEM_FORM_DEFAULTS = {
   unitId: '',
   volume: '0',
   contractUnitPrice: '',
+  unitPriceRab: '',
+  unitPriceRap: '',
+  priceMarkupPercent: '',
   progressMethod: 'VOLUME',
   includeInProgressWeight: true,
   sortOrder: 0,

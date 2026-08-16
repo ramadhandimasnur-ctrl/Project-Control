@@ -13,6 +13,7 @@ import {
   workItemResources,
   workItems,
 } from '@/db/schema';
+import { toDecimal } from '@/lib/calc/decimal';
 import { conflict, notFound } from '@/lib/errors';
 import {
   type WorkGroupFormValues,
@@ -178,6 +179,9 @@ export type WorkItemRow = {
   unitCode: string;
   volume: string;
   contractUnitPrice: string | null;
+  unitPriceRab: string | null;
+  unitPriceRap: string | null;
+  priceMarkupPercent: string | null;
   progressMethod: 'VOLUME' | 'PERCENT' | 'MILESTONE';
   includeInProgressWeight: boolean;
   sortOrder: number;
@@ -220,6 +224,9 @@ export async function listWorkItems(userId: string, projectId: string): Promise<
       unitCode: units.code,
       volume: workItems.volume,
       contractUnitPrice: workItems.contractUnitPrice,
+      unitPriceRab: workItems.unitPriceRab,
+      unitPriceRap: workItems.unitPriceRap,
+      priceMarkupPercent: workItems.priceMarkupPercent,
       progressMethod: workItems.progressMethod,
       includeInProgressWeight: workItems.includeInProgressWeight,
       sortOrder: workItems.sortOrder,
@@ -253,6 +260,23 @@ export async function getWorkItem(
   return item;
 }
 
+/**
+ * Form values as the columns store them.
+ *
+ * The markup is typed as a percentage and stored as a fraction — the same
+ * convention every other percent column follows, so a report that multiplies
+ * by 100 once gets the right answer wherever the figure came from.
+ */
+function toColumns(values: WorkItemFormValues) {
+  return {
+    ...values,
+    priceMarkupPercent:
+      values.priceMarkupPercent === null
+        ? null
+        : toDecimal(values.priceMarkupPercent).dividedBy(100).toString(),
+  };
+}
+
 export async function createWorkItem(
   user: SessionUser,
   projectId: string,
@@ -264,7 +288,7 @@ export async function createWorkItem(
   return withUser(user.id, async (tx) => {
     const [created] = await tx
       .insert(workItems)
-      .values({ ...values, projectId, createdBy: user.id, updatedBy: user.id })
+      .values({ ...toColumns(values), projectId, createdBy: user.id, updatedBy: user.id })
       .returning({ id: workItems.id });
 
     if (!created) throw conflict('Pekerjaan gagal dibuat.');
@@ -303,7 +327,7 @@ export async function updateWorkItem(
   await withUser(user.id, async (tx) => {
     await tx
       .update(workItems)
-      .set({ ...values, volume, updatedBy: user.id })
+      .set({ ...toColumns(values), volume, updatedBy: user.id })
       .where(eq(workItems.id, workItemId));
 
     await writeAuditLog(tx, {

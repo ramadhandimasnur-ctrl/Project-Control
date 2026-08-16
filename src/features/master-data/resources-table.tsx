@@ -26,10 +26,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { EMPTY_VALUE, formatCurrency } from '@/lib/format';
+import { EMPTY_VALUE } from '@/lib/format';
 import { type ResourceFormInput } from '@/lib/validation/master-data';
 
 import { deleteResourceAction, deleteResourcesAction } from './actions';
+import { PriceCells } from './price-cells';
 import { ResourceDialog } from './resource-dialog';
 
 export type ResourceRow = {
@@ -46,6 +47,8 @@ export type ResourceRow = {
   notes: string | null;
   priceRab: string | null;
   priceRap: string | null;
+  /** Percentage string, already converted from the stored fraction. */
+  markupPercent: string | null;
   isActive: boolean;
 };
 
@@ -224,8 +227,14 @@ export function ResourcesTable({
               <TableHead className="w-20">Satuan</TableHead>
               <TableHead className="w-28">Jenis</TableHead>
               <TableHead>Kategori</TableHead>
-              {showCosts ? <TableHead className="w-36 text-right">Harga RAB</TableHead> : null}
-              {showCosts ? <TableHead className="w-36 text-right">Harga RAP</TableHead> : null}
+              {showCosts ? (
+                <>
+                  <TableHead className="w-36 text-right">Harga RAB</TableHead>
+                  <TableHead className="w-36 text-right">Harga RAP</TableHead>
+                  <TableHead className="w-24 text-right">Markup</TableHead>
+                  <TableHead className="w-24" />
+                </>
+              ) : null}
               {canManage ? <TableHead className="w-28" /> : null}
             </TableRow>
           </TableHeader>
@@ -279,22 +288,14 @@ export function ResourcesTable({
                   </TableCell>
 
                   {showCosts ? (
-                    <TableCell className="text-right font-mono tabular-nums">
-                      {item.priceRab === null ? (
-                        <span className="text-muted-foreground">{EMPTY_VALUE}</span>
-                      ) : (
-                        formatCurrency(item.priceRab)
-                      )}
-                    </TableCell>
-                  ) : null}
-                  {showCosts ? (
-                    <TableCell className="text-right font-mono tabular-nums">
-                      {item.priceRap === null ? (
-                        <span className="text-muted-foreground">{EMPTY_VALUE}</span>
-                      ) : (
-                        formatCurrency(item.priceRap)
-                      )}
-                    </TableCell>
+                    <PriceCells
+                      resourceId={item.id}
+                      resourceName={item.name}
+                      initialRap={item.priceRap}
+                      initialRab={item.priceRab}
+                      initialMarkup={item.markupPercent}
+                      canEdit={canManage}
+                    />
                   ) : null}
 
                   {canManage ? (

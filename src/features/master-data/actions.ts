@@ -221,6 +221,55 @@ export async function addPricePairAction(
   return { ok: true };
 }
 
+/**
+ * One row's prices, edited straight in the catalogue table.
+ *
+ * Effective from today, always. Typing a new price in a list means "this is
+ * what it costs now" — asking for a date at that moment would turn a two-second
+ * correction back into the dialog this exists to replace. Yesterday's price
+ * stays in the history untouched, so an estimate dated last month keeps the
+ * figure it was built from.
+ */
+export async function quickSetPriceAction(
+  resourceId: string,
+  input: { priceRap: string; priceRab: string; markupPercent: string },
+): Promise<ActionResult> {
+  const parsed = pricePairFormSchema.safeParse({
+    ...input,
+    effectiveFrom: new Date().toISOString().slice(0, 10),
+    source: '',
+    note: '',
+  });
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? 'Harga tidak valid.',
+      fieldErrors: fieldErrorsOf(parsed.error.issues),
+    };
+  }
+
+  try {
+    const user = await requireSessionUser();
+    await setPricePair(user, {
+      resourceId,
+      projectId: null,
+      priceRap: parsed.data.priceRap,
+      priceRab: parsed.data.priceRab,
+      markupPercent: parsed.data.markupPercent,
+      effectiveFrom: parsed.data.effectiveFrom,
+      source: null,
+      note: null,
+    });
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidateCatalogue();
+  revalidatePath(`/master-data/resources/${resourceId}`);
+  return { ok: true };
+}
+
 export async function addPriceAction(resourceId: string, raw: unknown): Promise<ActionResult> {
   const parsed = priceFormSchema.safeParse(raw);
   if (!parsed.success) {

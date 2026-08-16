@@ -60,6 +60,17 @@ export const workItems = pgTable(
      * contract figure.
      */
     contractUnitPrice: money('contract_unit_price'),
+    /*
+     * Unit prices typed straight onto the work item, for lines that carry no
+     * AHSP breakdown — a lump-sum mobilisation has a price and no meaningful
+     * analysis. Ignored the moment analysis lines exist: an item with an AHSP
+     * is priced by its AHSP, or the same work would carry two different rates
+     * depending on which screen was open.
+     */
+    unitPriceRab: money('unit_price_rab'),
+    unitPriceRap: money('unit_price_rap'),
+    /** Links the two above, remembered so the form reopens on what was set. */
+    priceMarkupPercent: percent('price_markup_percent'),
 
     progressMethod: progressMethodEnum('progress_method').notNull().default('VOLUME'),
     /** False for operational/overhead lines: costed, but not part of progress. */

@@ -1,9 +1,10 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { applyPriceEdit, type PriceMode } from '@/lib/calc/markup';
 import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
@@ -67,8 +68,33 @@ export function WorkItemDialog({
     setError,
     watch,
     setValue,
+    getValues,
     formState: { errors, isSubmitting },
   } = form;
+
+  /*
+   * The same three-way binding the catalogue uses, from the same pure module,
+   * so a price typed here behaves exactly as one typed there.
+   */
+  const priceMode = useRef<PriceMode>(defaultValues?.priceMarkupPercent ? 'markup' : 'rab');
+
+  const onPriceEdit = (field: 'rap' | 'rab' | 'markup', value: string) => {
+    const current = {
+      rap: String(getValues('unitPriceRap') ?? ''),
+      rab: String(getValues('unitPriceRab') ?? ''),
+      markup: String(getValues('priceMarkupPercent') ?? ''),
+    };
+
+    const result = applyPriceEdit(current, field, value, priceMode.current);
+    priceMode.current = result.mode;
+
+    if (result.next.rab !== current.rab) {
+      setValue('unitPriceRab', result.next.rab, { shouldValidate: false });
+    }
+    if (result.next.markup !== current.markup) {
+      setValue('priceMarkupPercent', result.next.markup, { shouldValidate: false });
+    }
+  };
 
   const messageOf = (field: keyof WorkItemFormInput): string | undefined => {
     const entry = errors[field];
@@ -170,6 +196,61 @@ export function WorkItemDialog({
               error={messageOf('volume')}
               registration={register('volume')}
             />
+          </div>
+
+          {/*
+            Direct prices, for lines that carry no AHSP.
+            Markup and RAB are two ends of one relationship, so editing either
+            derives the other while RAP stays authoritative — the same rule the
+            catalogue table follows, from the same module.
+          */}
+          <div className="rounded-md border p-3">
+            <p className="mb-2 text-xs text-muted-foreground">
+              Harga satuan langsung, dipakai hanya bila pekerjaan ini tidak punya analisa AHSP.
+              Begitu ada baris analisa, harga di sini diabaikan dan angkanya dihitung dari analisa
+              itu.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <TextField
+                id="unitPriceRap"
+                label="Harga RAP"
+                inputMode="decimal"
+                error={messageOf('unitPriceRap')}
+                registration={{
+                  ...register('unitPriceRap'),
+                  onChange: async (event: React.ChangeEvent<HTMLInputElement>) => {
+                    await register('unitPriceRap').onChange(event);
+                    onPriceEdit('rap', event.target.value);
+                  },
+                }}
+              />
+              <TextField
+                id="unitPriceRab"
+                label="Harga RAB"
+                inputMode="decimal"
+                error={messageOf('unitPriceRab')}
+                registration={{
+                  ...register('unitPriceRab'),
+                  onChange: async (event: React.ChangeEvent<HTMLInputElement>) => {
+                    await register('unitPriceRab').onChange(event);
+                    onPriceEdit('rab', event.target.value);
+                  },
+                }}
+              />
+              <TextField
+                id="priceMarkupPercent"
+                label="Markup (%)"
+                inputMode="decimal"
+                error={messageOf('priceMarkupPercent')}
+                registration={{
+                  ...register('priceMarkupPercent'),
+                  onChange: async (event: React.ChangeEvent<HTMLInputElement>) => {
+                    await register('priceMarkupPercent').onChange(event);
+                    onPriceEdit('markup', event.target.value);
+                  },
+                }}
+              />
+            </div>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

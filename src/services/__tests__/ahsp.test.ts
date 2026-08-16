@@ -450,6 +450,9 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
         unitId: (await sql`SELECT unit_id FROM work_items WHERE id = ${workItemId}`)[0]!.unit_id,
         volume: '50.0000',
         contractUnitPrice: '1250000.00',
+        unitPriceRab: null,
+        unitPriceRap: null,
+        priceMarkupPercent: null,
         progressMethod: 'VOLUME',
         includeInProgressWeight: true,
         sortOrder: 1,
@@ -499,7 +502,8 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
       const empty = await breakdown.createWorkItem(user, projectId, {
         code: 'A.99', name: 'Kosong', spec: null, groupId: null,
         unitId: (await sql`SELECT unit_id FROM work_items WHERE id = ${workItemId}`)[0]!.unit_id,
-        volume: '1.0000', contractUnitPrice: null, progressMethod: 'VOLUME',
+                volume: '1.0000', contractUnitPrice: null, progressMethod: 'VOLUME',
+        unitPriceRab: null, unitPriceRap: null, priceMarkupPercent: null,
         includeInProgressWeight: true, sortOrder: 9,
       });
 

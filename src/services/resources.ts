@@ -43,6 +43,8 @@ export type ResourceListItem = {
   categoryId: string | null;
   leadTimeDays: number;
   notes: string | null;
+  /** Stored as a fraction; the table shows it as a percentage. */
+  priceMarkupPercent: string | null;
   /** null means the price book has no entry in force — shown as "—". */
   priceRab: string | null;
   priceRap: string | null;
@@ -113,6 +115,7 @@ export async function listResources(
       categoryId: resources.categoryId,
       leadTimeDays: resources.leadTimeDays,
       notes: resources.notes,
+      priceMarkupPercent: resources.priceMarkupPercent,
     })
     .from(resources)
     .innerJoin(units, eq(units.id, resources.unitId))

@@ -108,11 +108,38 @@ export function estimateWorkItem(input: {
   lines: readonly EstimateLine[];
   contractUnitPrice?: Numeric | null;
   markup?: Numeric;
+  /**
+   * Unit prices typed directly on the work item.
+   *
+   * Used only when the item has no analysis lines. A work item with an AHSP is
+   * priced by its AHSP — letting a typed figure override it would give the
+   * same work two different unit rates depending on which screen you opened,
+   * and the analysis panel would stop explaining the number beside it.
+   *
+   * This exists because not every job earns a full breakdown: a lump-sum
+   * mobilisation line has a price and no meaningful analysis, and forcing one
+   * invents detail nobody costed.
+   */
+  directUnitRab?: Numeric | null;
+  directUnitRap?: Numeric | null;
 }): WorkItemEstimate {
-  const { volume, lines, contractUnitPrice = null, markup = 0 } = input;
+  const {
+    volume,
+    lines,
+    contractUnitPrice = null,
+    markup = 0,
+    directUnitRab = null,
+    directUnitRap = null,
+  } = input;
 
-  const rabUnit = unitCostRab(lines);
-  const rapUnit = unitCostRap(lines);
+  const hasLines = lines.length > 0;
+
+  const rabUnit = hasLines
+    ? unitCostRab(lines)
+    : toDecimal(directUnitRab ?? directUnitRap ?? 0);
+  const rapUnit = hasLines
+    ? unitCostRap(lines)
+    : toDecimal(directUnitRap ?? directUnitRab ?? 0);
   const rab = toDecimal(volume).times(rabUnit);
   const rap = toDecimal(volume).times(rapUnit);
   const contract = contractValue(volume, contractUnitPrice, rab, markup);

@@ -8,6 +8,7 @@ import { ResourceCreateButton } from '@/features/master-data/resource-create-but
 import { ResourcesTable } from '@/features/master-data/resources-table';
 import { assertOrgAccess } from '@/services/org-access';
 import { listCategories } from '@/services/resource-categories';
+import { toDecimal } from '@/lib/calc/decimal';
 import { listResources, type ResourceType } from '@/services/resources';
 import { requireSessionUser } from '@/services/session';
 import { listUnits } from '@/services/units';
@@ -115,6 +116,10 @@ export default async function ResourcesPage({
               notes: item.notes,
               priceRab: item.priceRab,
               priceRap: item.priceRap,
+              markupPercent:
+                item.priceMarkupPercent === null
+                  ? null
+                  : toDecimal(item.priceMarkupPercent).times(100).toString(),
               isActive: item.isActive,
             }))}
             units={units.map((u) => ({ id: u.id, code: u.code, name: u.name }))}

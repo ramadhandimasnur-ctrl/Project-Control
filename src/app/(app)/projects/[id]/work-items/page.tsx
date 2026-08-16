@@ -14,6 +14,7 @@ import { EMPTY_VALUE, formatQuantity } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { getWorkItemEstimate } from '@/services/ahsp';
 import { listApplicableTemplates } from '@/services/ahsp-templates';
+import { toDecimal } from '@/lib/calc/decimal';
 import { canViewOrgCosts } from '@/services/org-access';
 import { getProject } from '@/services/projects';
 import { listResources } from '@/services/resources';
@@ -154,6 +155,12 @@ export default async function WorkItemsPage({
                     unitId: selected.unitId,
                     volume: selected.volume,
                     contractUnitPrice: selected.contractUnitPrice ?? '',
+                    unitPriceRab: selected.unitPriceRab ?? '',
+                    unitPriceRap: selected.unitPriceRap ?? '',
+                    priceMarkupPercent:
+                      selected.priceMarkupPercent === null
+                        ? ''
+                        : toDecimal(selected.priceMarkupPercent).times(100).toString(),
                     progressMethod: selected.progressMethod,
                     includeInProgressWeight: selected.includeInProgressWeight,
                     sortOrder: selected.sortOrder,

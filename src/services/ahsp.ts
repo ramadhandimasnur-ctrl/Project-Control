@@ -92,6 +92,8 @@ export async function getWorkItemEstimate(
       id: workItems.id,
       volume: workItems.volume,
       contractUnitPrice: workItems.contractUnitPrice,
+      unitPriceRab: workItems.unitPriceRab,
+      unitPriceRap: workItems.unitPriceRap,
     })
     .from(workItems)
     .where(and(eq(workItems.id, workItemId), eq(workItems.projectId, projectId)))
@@ -175,6 +177,8 @@ export async function getWorkItemEstimate(
     lines: estimateLines,
     contractUnitPrice: item.contractUnitPrice,
     markup: project?.defaultMarkup ?? 0,
+    directUnitRab: item.unitPriceRab,
+    directUnitRap: item.unitPriceRap,
   });
 
   const subtotalsRap = EMPTY_SUBTOTALS();
@@ -295,6 +299,8 @@ export async function getProjectEstimate(
       unitCode: units.code,
       volume: workItems.volume,
       contractUnitPrice: workItems.contractUnitPrice,
+      unitPriceRab: workItems.unitPriceRab,
+      unitPriceRap: workItems.unitPriceRap,
       includeInProgressWeight: workItems.includeInProgressWeight,
     })
     .from(workItems)
