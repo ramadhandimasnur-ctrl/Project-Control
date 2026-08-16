@@ -71,6 +71,13 @@
       "when": 1786872767271,
       "tag": "0009_progress_documents_period",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786873558480,
+      "tag": "0010_report_signatories",
+      "breakpoints": true
     }
   ]
 }

@@ -166,3 +166,15 @@ export const reportTypeEnum = pgEnum('report_type', ['DAILY', 'WEEKLY', 'MONTHLY
 export const issueSeverityEnum = pgEnum('issue_severity', ['LOW', 'MEDIUM', 'HIGH']);
 export const issueStatusEnum = pgEnum('issue_status', ['OPEN', 'IN_PROGRESS', 'CLOSED']);
 export const auditActionEnum = pgEnum('audit_action', ['INSERT', 'UPDATE', 'DELETE', 'VOID']);
+
+/**
+ * The three columns at the foot of a printed report.
+ *
+ * The slot is the role the column plays, not the person filling it — the
+ * middle column stays "checked by" when the checker changes.
+ */
+export const signatorySlotEnum = pgEnum('signatory_slot', [
+  'PREPARED_BY',
+  'CHECKED_BY',
+  'APPROVED_BY',
+]);

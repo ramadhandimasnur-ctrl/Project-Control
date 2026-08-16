@@ -155,6 +155,7 @@ BEGIN
       ('work_items',                'pc_can_access_project(project_id)',            true),
       ('schedule_periods',          'pc_can_access_project(project_id)',            true),
       ('project_holidays',          'pc_can_access_project(project_id)',            true),
+      ('project_signatories',       'pc_can_access_project(project_id)',            true),
       ('schedule_baselines',        'pc_can_access_project(project_id)',            true),
       ('progress_entries',          'pc_can_access_project(project_id)',            true),
       ('warehouses',                'pc_can_access_project(project_id)',            true),

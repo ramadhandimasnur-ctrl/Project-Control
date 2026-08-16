@@ -9,10 +9,45 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { primaryId } from './_shared';
-import { auditActionEnum, issueSeverityEnum, issueStatusEnum, reportTypeEnum } from './enums';
+import {
+  auditActionEnum,
+  issueSeverityEnum,
+  issueStatusEnum,
+  reportTypeEnum,
+  signatorySlotEnum,
+} from './enums';
 import { auditColumns, organizations, users } from './org';
 import { projects } from './projects';
 import { schedulePeriods } from './schedule';
+
+/**
+ * Who signs a printed report, and as what.
+ *
+ * One row per slot per project, so the three columns at the foot of every sheet
+ * are filled from the same place rather than retyped per report. The signature
+ * image is optional by design: a site that signs on paper wants a clean empty
+ * box above the printed name, not a placeholder telling them something is
+ * missing.
+ *
+ * `slot` is the column's meaning, not a person — "Diperiksa oleh" stays the
+ * middle column even when the person filling it changes.
+ */
+export const projectSignatories = pgTable(
+  'project_signatories',
+  {
+    id: primaryId(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    slot: signatorySlotEnum('slot').notNull(),
+    name: text('name').notNull(),
+    position: text('position').notNull(),
+    /** Path into the private document bucket; null means sign by hand. */
+    signaturePath: text('signature_path'),
+    ...auditColumns(),
+  },
+  (t) => [uniqueIndex('project_signatories_slot_unique').on(t.projectId, t.slot)],
+);
 
 /**
  * Published reports are frozen. `payload` holds the fully computed figures, so

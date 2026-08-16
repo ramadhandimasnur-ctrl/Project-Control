@@ -16,8 +16,11 @@ import {
 import { PaperSettings } from '@/features/progress/paper-settings';
 import { PeriodPicker } from '@/features/progress/period-picker';
 import { ReportDocuments } from '@/features/progress/report-documents';
-import { canRecordFieldData } from '@/lib/auth/roles';
+import { SignatureBlock } from '@/features/reports/signature-block';
+import { SignatoryEditor } from '@/features/reports/signatory-editor';
+import { canEditContractTerms, canRecordFieldData } from '@/lib/auth/roles';
 import { listPeriodDocuments } from '@/services/documents';
+import { listSignatories } from '@/services/signatories';
 import { ZERO, toDecimal } from '@/lib/calc/decimal';
 import { PROGRESS_STATUS_LABELS } from '@/lib/calc/progress';
 import { EMPTY_VALUE, formatDay, formatPercent, formatQuantity } from '@/lib/format';
@@ -67,6 +70,8 @@ export default async function OpnameReportPage({
 
   // Loaded after the period is known, since documents are stored against it.
   const documents = period === null ? [] : await listPeriodDocuments(user.id, projectId, period.id);
+  const signatories = await listSignatories(user.id, projectId);
+  const canSign = canEditContractTerms(project.role);
 
   if (board.periods.length === 0 || period === null) {
     return (
@@ -103,6 +108,14 @@ export default async function OpnameReportPage({
           />
         </div>
         <PaperSettings previewSelector="#opname-sheet" />
+      </div>
+
+      <div data-print="hide" className="mb-6">
+        <SignatoryEditor
+          projectId={projectId}
+          signatories={signatories}
+          canEdit={canSign}
+        />
       </div>
 
       {/*
@@ -235,14 +248,7 @@ export default async function OpnameReportPage({
         />
       </section>
 
-      <section data-print="keep-together" className="grid gap-8 pt-8 sm:grid-cols-3">
-        {['Disusun oleh', 'Diperiksa oleh', 'Disetujui oleh'].map((role) => (
-          <div key={role} className="space-y-10 text-center text-sm">
-            <p>{role}</p>
-            <p className="border-t pt-1 text-muted-foreground">(&nbsp;&nbsp;&nbsp;&nbsp;)</p>
-          </div>
-        ))}
-        </section>
+      <SignatureBlock signatories={signatories} />
       </div>
     </div>
   );

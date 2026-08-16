@@ -17,8 +17,10 @@ import {
 } from '@/components/ui/table';
 import { PaperSettings } from '@/features/progress/paper-settings';
 import { ReportDocuments } from '@/features/progress/report-documents';
+import { SignatureBlock } from '@/features/reports/signature-block';
 import { canRecordFieldData } from '@/lib/auth/roles';
 import { listPeriodDocuments } from '@/services/documents';
+import { listSignatories } from '@/services/signatories';
 import { getProject } from '@/services/projects';
 import { SCurveChart } from '@/features/schedule/scurve-chart';
 import { ZERO, toDecimal } from '@/lib/calc/decimal';
@@ -90,9 +92,10 @@ export default async function SnapshotPage({
    * what the report claims, because every number on the page still comes from
    * the snapshot.
    */
-  const [project, documents] = await Promise.all([
+  const [project, documents, signatories] = await Promise.all([
     getProject(user.id, projectId),
     listPeriodDocuments(user.id, projectId, payload.period.id),
+    listSignatories(user.id, projectId),
   ]);
   const canRecord = canRecordFieldData(project.role);
 
@@ -378,14 +381,7 @@ export default async function SnapshotPage({
           )}
         </section>
 
-        <section data-print="keep-together" className="grid gap-8 pt-8 sm:grid-cols-3">
-          {['Disusun oleh', 'Diperiksa oleh', 'Disetujui oleh'].map((role) => (
-            <div key={role} className="space-y-10 text-center text-sm">
-              <p>{role}</p>
-              <p className="border-t pt-1 text-muted-foreground">(&nbsp;&nbsp;&nbsp;&nbsp;)</p>
-            </div>
-          ))}
-        </section>
+        <SignatureBlock signatories={signatories} />
       </div>
     </div>
   );
