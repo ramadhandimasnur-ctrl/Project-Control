@@ -1,6 +1,5 @@
 import { FileBarChart, FileSpreadsheet, Info, Printer } from 'lucide-react';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
@@ -17,11 +16,17 @@ import {
 } from '@/components/ui/table';
 import { PeriodPicker } from '@/features/progress/period-picker';
 import { DeleteIssueButton, IssueButton, PublishButton } from '@/features/reports/report-actions';
-import { canEditProjectData, canRecordFieldData, canViewCosts } from '@/lib/auth/roles';
-import { EMPTY_VALUE, formatDateTime, formatDay } from '@/lib/format';
+import { SnapshotTable } from '@/features/reports/snapshot-table';
+import {
+  canEditContractTerms,
+  canEditProjectData,
+  canRecordFieldData,
+  canViewCosts,
+} from '@/lib/auth/roles';
+import { EMPTY_VALUE, formatDay } from '@/lib/format';
 import { getProgressBoard } from '@/services/progress';
 import { getProject } from '@/services/projects';
-import { ISSUE_SEVERITY_LABELS, ISSUE_STATUS_LABELS, REPORT_TYPE_LABELS } from '@/lib/reports/labels';
+import { ISSUE_SEVERITY_LABELS, ISSUE_STATUS_LABELS } from '@/lib/reports/labels';
 import { listIssues, listSnapshots } from '@/services/reports';
 import { requireSessionUser } from '@/services/session';
 
@@ -55,6 +60,11 @@ export default async function ReportsPage({
   const canPublish = canEditProjectData(project.role);
   const canRecord = canRecordFieldData(project.role);
   const showCosts = canViewCosts(project.role);
+  /*
+   * Withdrawing sits a rung above publishing. Issuing a report is routine;
+   * pulling one that has already gone out with an invoice is commercial.
+   */
+  const canWithdrawReports = canEditContractTerms(project.role);
 
   const [board, snapshots, openIssues] = await Promise.all([
     getProgressBoard(user.id, projectId, query.period),
@@ -154,41 +164,11 @@ export default async function ReportsPage({
                 </AlertDescription>
               </Alert>
             ) : (
-              <div className="overflow-x-auto rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-28">Jenis</TableHead>
-                      <TableHead>Periode</TableHead>
-                      <TableHead className="w-56">Diterbitkan</TableHead>
-                      <TableHead className="w-28" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {snapshots.map((snapshot) => (
-                      <TableRow key={snapshot.id}>
-                        <TableCell>
-                          <Badge variant="secondary" className="text-[10px]">
-                            {REPORT_TYPE_LABELS[snapshot.reportType]}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{snapshot.periodLabel}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {formatDateTime(new Date(snapshot.generatedAt))}
-                        </TableCell>
-                        <TableCell>
-                          <Link
-                            href={`/projects/${projectId}/reports/${snapshot.id}`}
-                            className="text-sm underline underline-offset-2 hover:text-foreground"
-                          >
-                            Buka
-                          </Link>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+              <SnapshotTable
+                projectId={projectId}
+                snapshots={snapshots}
+                canDelete={canWithdrawReports}
+              />
             )}
           </section>
 

@@ -147,10 +147,23 @@ async function main(): Promise<void> {
   await withBypass(async (tx) => {
     const [row] = await tx.select({ id: users.id }).from(users).where(eq(users.id, authUserId)).limit(1);
 
+    /*
+     * Status travels with `isActive` on both paths. The database has a check
+     * constraint tying them together, so setting one alone is rejected — this
+     * CLI is the intended way back in when nobody can approve anyone, and it
+     * has to leave the account genuinely usable.
+     */
     if (row) {
       await tx
         .update(users)
-        .set({ orgId: org.id, email, fullName, globalRole: roleArg, isActive: true })
+        .set({
+          orgId: org.id,
+          email,
+          fullName,
+          globalRole: roleArg,
+          status: 'ACTIVE',
+          isActive: true,
+        })
         .where(eq(users.id, authUserId));
     } else {
       await tx.insert(users).values({
@@ -159,6 +172,7 @@ async function main(): Promise<void> {
         email,
         fullName,
         globalRole: roleArg,
+        status: 'ACTIVE',
         isActive: true,
       });
     }

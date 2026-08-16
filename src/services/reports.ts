@@ -315,6 +315,88 @@ export async function publishReport(
   });
 }
 
+/**
+ * Removes a published report.
+ *
+ * Gated at project manager rather than at engineer, which is what publishing
+ * needs. Issuing a report is routine; withdrawing one that has already gone out
+ * with an invoice is a commercial act.
+ *
+ * The whole frozen payload is written to the audit log before the row goes.
+ * The point of a snapshot is that someone can later ask what a given report
+ * said — and deleting it without keeping a trace would answer that question
+ * with silence, which is exactly the failure the snapshot exists to prevent.
+ */
+export async function deleteSnapshot(
+  user: SessionUser,
+  projectId: string,
+  snapshotId: string,
+): Promise<void> {
+  const access = await assertProjectAccess(user.id, projectId, 'PROJECT_MANAGER');
+
+  const [row] = await db
+    .select({
+      id: reportSnapshots.id,
+      reportType: reportSnapshots.reportType,
+      periodId: reportSnapshots.periodId,
+      generatedAt: reportSnapshots.generatedAt,
+      payload: reportSnapshots.payload,
+    })
+    .from(reportSnapshots)
+    .where(and(eq(reportSnapshots.id, snapshotId), eq(reportSnapshots.projectId, projectId)))
+    .limit(1);
+
+  if (!row) throw notFound('Laporan tidak ditemukan.');
+
+  await withUser(user.id, async (tx) => {
+    await writeAuditLog(tx, {
+      orgId: access.orgId,
+      projectId,
+      tableName: 'report_snapshots',
+      recordId: snapshotId,
+      action: 'DELETE',
+      before: {
+        reportType: row.reportType,
+        periodId: row.periodId,
+        generatedAt: row.generatedAt.toISOString(),
+        payload: row.payload,
+      },
+      actorId: user.id,
+    });
+
+    await tx.delete(reportSnapshots).where(eq(reportSnapshots.id, snapshotId));
+  });
+}
+
+export type SnapshotDeletionResult = {
+  deleted: number;
+  refused: { id: string; reason: string }[];
+};
+
+/** Bulk withdrawal, reporting each refusal rather than stopping at the first. */
+export async function deleteSnapshots(
+  user: SessionUser,
+  projectId: string,
+  snapshotIds: readonly string[],
+): Promise<SnapshotDeletionResult> {
+  const refused: SnapshotDeletionResult['refused'] = [];
+  let deleted = 0;
+
+  for (const snapshotId of snapshotIds) {
+    try {
+      await deleteSnapshot(user, projectId, snapshotId);
+      deleted += 1;
+    } catch (error) {
+      refused.push({
+        id: snapshotId,
+        reason: error instanceof Error ? error.message : 'Gagal dihapus.',
+      });
+    }
+  }
+
+  return { deleted, refused };
+}
+
 // --- issues -----------------------------------------------------------------
 
 export type IssueRow = {

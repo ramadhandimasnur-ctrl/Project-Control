@@ -8,6 +8,7 @@ import { withUser } from '@/db/context';
 import {
   baselineDistributions,
   plannedDistributions,
+  projectHolidays,
   projects,
   scheduleBaselines,
   schedulePeriods,
@@ -20,6 +21,7 @@ import {
   type GeneratedPeriod,
   type PeriodType,
   type SCurvePoint,
+  type WorkCalendar,
   checkDistributions,
   distributeByDuration,
   durationBetween,
@@ -32,6 +34,153 @@ import { assertProjectAccess } from './access';
 import { getProjectEstimate } from './ahsp';
 import { writeAuditLog } from './audit';
 import { type SessionUser } from './session';
+
+// --- working calendar -------------------------------------------------------
+
+export type HolidayRow = { id: string; holidayDate: string; name: string };
+
+/**
+ * The project's working calendar.
+ *
+ * Memoised per request: duration, distribution and the Gantt all need it, and
+ * without the cache a single schedule page would fetch the holiday list three
+ * times to answer the same question.
+ */
+export const getWorkCalendar = cache(async function getWorkCalendar(
+  projectId: string,
+): Promise<WorkCalendar> {
+  const [project] = await db
+    .select({ countWeekends: projects.countWeekends })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+
+  if (!project) throw notFound('Proyek tidak ditemukan.');
+
+  const rows = await db
+    .select({ holidayDate: projectHolidays.holidayDate })
+    .from(projectHolidays)
+    .where(eq(projectHolidays.projectId, projectId));
+
+  return {
+    countWeekends: project.countWeekends,
+    holidays: new Set(rows.map((row) => row.holidayDate)),
+  };
+});
+
+export async function listHolidays(userId: string, projectId: string): Promise<HolidayRow[]> {
+  await assertProjectAccess(userId, projectId, 'VIEWER');
+
+  return db
+    .select({
+      id: projectHolidays.id,
+      holidayDate: projectHolidays.holidayDate,
+      name: projectHolidays.name,
+    })
+    .from(projectHolidays)
+    .where(eq(projectHolidays.projectId, projectId))
+    .orderBy(asc(projectHolidays.holidayDate));
+}
+
+/**
+ * Adds a non-working day.
+ *
+ * Existing distributions are left alone. They were agreed against the calendar
+ * in force when they were drawn, and silently reshaping a plan — possibly one
+ * already frozen into a baseline — because someone recorded a public holiday
+ * would move the line the project is judged against without anyone deciding to.
+ * The page says so and offers to redistribute.
+ */
+export async function addHoliday(
+  user: SessionUser,
+  projectId: string,
+  input: { holidayDate: string; name: string },
+): Promise<{ id: string }> {
+  const access = await assertProjectAccess(user.id, projectId, 'ENGINEER');
+
+  const name = input.name.trim();
+  if (name === '') throw validation('Nama hari libur wajib diisi.');
+
+  return withUser(user.id, async (tx) => {
+    const [created] = await tx
+      .insert(projectHolidays)
+      .values({
+        projectId,
+        holidayDate: input.holidayDate,
+        name,
+        createdBy: user.id,
+        updatedBy: user.id,
+      })
+      .onConflictDoUpdate({
+        target: [projectHolidays.projectId, projectHolidays.holidayDate],
+        set: { name, updatedBy: user.id },
+      })
+      .returning({ id: projectHolidays.id });
+
+    if (!created) throw conflict('Hari libur gagal disimpan.');
+
+    await writeAuditLog(tx, {
+      orgId: access.orgId,
+      projectId,
+      tableName: 'project_holidays',
+      recordId: created.id,
+      action: 'INSERT',
+      after: { ...input, name },
+      actorId: user.id,
+    });
+
+    return { id: created.id };
+  });
+}
+
+export async function deleteHoliday(
+  user: SessionUser,
+  projectId: string,
+  holidayId: string,
+): Promise<void> {
+  const access = await assertProjectAccess(user.id, projectId, 'ENGINEER');
+
+  await withUser(user.id, async (tx) => {
+    await writeAuditLog(tx, {
+      orgId: access.orgId,
+      projectId,
+      tableName: 'project_holidays',
+      recordId: holidayId,
+      action: 'DELETE',
+      actorId: user.id,
+    });
+
+    await tx
+      .delete(projectHolidays)
+      .where(and(eq(projectHolidays.id, holidayId), eq(projectHolidays.projectId, projectId)));
+  });
+}
+
+/** Switches whether Saturdays and Sundays are worked. */
+export async function setCountWeekends(
+  user: SessionUser,
+  projectId: string,
+  countWeekends: boolean,
+): Promise<void> {
+  const access = await assertProjectAccess(user.id, projectId, 'ENGINEER');
+
+  await withUser(user.id, async (tx) => {
+    await tx
+      .update(projects)
+      .set({ countWeekends, updatedBy: user.id })
+      .where(eq(projects.id, projectId));
+
+    await writeAuditLog(tx, {
+      orgId: access.orgId,
+      projectId,
+      tableName: 'projects',
+      recordId: projectId,
+      action: 'UPDATE',
+      after: { countWeekends },
+      actorId: user.id,
+    });
+  });
+}
 
 // --- periods ----------------------------------------------------------------
 
@@ -287,9 +436,24 @@ export async function saveWorkItemSchedule(
 
   if (!item) throw notFound('Pekerjaan tidak ditemukan pada proyek ini.');
 
+  const calendar = await getWorkCalendar(projectId);
+
   if (input.plannedStart !== null && input.plannedFinish !== null) {
+    /*
+     * Ordering is checked on the plain calendar and duration on the working
+     * one. A one-day task that lands on a Sunday has a valid date range and a
+     * working duration of zero — refusing it as "finish before start" would be
+     * both wrong and baffling.
+     */
     if (durationBetween(input.plannedStart, input.plannedFinish) < 1) {
       throw validation('Tanggal selesai mendahului tanggal mulai.');
+    }
+
+    if (durationBetween(input.plannedStart, input.plannedFinish, calendar) < 1) {
+      throw validation(
+        'Rentang tanggal ini tidak memuat satu pun hari kerja.',
+        'Seluruh harinya jatuh pada akhir pekan atau hari libur proyek.',
+      );
     }
   }
 
@@ -297,9 +461,11 @@ export async function saveWorkItemSchedule(
     await assertUsablePredecessor(projectId, workItemId, input.predecessorId);
   }
 
+  // Stored in working days, which is what the Gantt and the S-curve mean by
+  // "duration" once a project declares that it does not work Sundays.
   const durationDays =
     input.plannedStart !== null && input.plannedFinish !== null
-      ? durationBetween(input.plannedStart, input.plannedFinish)
+      ? durationBetween(input.plannedStart, input.plannedFinish, calendar)
       : null;
 
   await withUser(user.id, async (tx) => {
@@ -550,12 +716,18 @@ export async function autoDistributeWorkItem(
     );
   }
 
-  const distribution = distributeByDuration(periods, schedule.plannedStart, schedule.plannedFinish);
+  const calendar = await getWorkCalendar(projectId);
+  const distribution = distributeByDuration(
+    periods,
+    schedule.plannedStart,
+    schedule.plannedFinish,
+    calendar,
+  );
 
   if (distribution.length === 0) {
     throw validation(
-      'Tanggal rencana pekerjaan ini berada di luar rentang proyek.',
-      'Sesuaikan tanggalnya, atau perbarui tanggal proyek lalu bangun ulang periodenya.',
+      'Tanggal rencana pekerjaan ini tidak memuat hari kerja di dalam rentang proyek.',
+      'Sesuaikan tanggalnya, periksa hari libur proyek, atau perbarui tanggal proyek lalu bangun ulang periodenya.',
     );
   }
 
@@ -598,6 +770,8 @@ export type ScheduleOverview = {
   projectStart: string;
   projectEnd: string;
   periodType: PeriodType;
+  /** Serialisable form of the working calendar, for the client components. */
+  workCalendar: { countWeekends: boolean; holidays: string[] };
   periods: PeriodRow[];
   rows: GanttRow[];
   /** workItemId â†’ periodId â†’ planned share, only the non-zero cells. */
@@ -635,10 +809,11 @@ export const getScheduleOverview = cache(async function getScheduleOverview(
   await assertProjectAccess(userId, projectId, 'VIEWER');
 
   const project = await loadProjectDates(projectId);
-  const [periods, estimate, baseline] = await Promise.all([
+  const [periods, estimate, baseline, calendar] = await Promise.all([
     listPeriods(userId, projectId),
     getProjectEstimate(userId, projectId),
     getActiveBaseline(projectId),
+    getWorkCalendar(projectId),
   ]);
 
   const itemIds = estimate.items.map((item) => item.workItemId);
@@ -735,6 +910,10 @@ export const getScheduleOverview = cache(async function getScheduleOverview(
     projectStart: project.startDate,
     projectEnd: project.endDate,
     periodType: project.periodType,
+    workCalendar: {
+      countWeekends: calendar.countWeekends,
+      holidays: [...calendar.holidays].sort(),
+    },
     periods,
     rows,
     matrix,

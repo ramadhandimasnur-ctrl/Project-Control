@@ -291,6 +291,93 @@ describe.skipIf(!ready)('Jadwal & baseline', () => {
     });
   });
 
+  /**
+   * The working calendar has to reach the numbers, not just the settings page.
+   * A duration that still counts Sundays after the project says it does not
+   * work them is the whole feature failing silently.
+   */
+  describe('kalender kerja', () => {
+    it('menghitung durasi tanpa akhir pekan setelah sakelarnya dimatikan', async () => {
+      const dates = {
+        plannedStart: '2026-01-05',
+        plannedFinish: '2026-01-14',
+        predecessorId: null,
+        dependencyType: 'FS' as const,
+        lagDays: 0,
+      };
+
+      await schedule.saveWorkItemSchedule(user, projectId, itemA, dates);
+      const before = await sql<{ duration_days: number }[]>`
+        SELECT duration_days FROM work_item_schedules WHERE work_item_id = ${itemA}
+      `;
+      expect(before[0]?.duration_days).toBe(10);
+
+      await schedule.setCountWeekends(user, projectId, false);
+      await schedule.saveWorkItemSchedule(user, projectId, itemA, dates);
+
+      // 5–14 Jan 2026 contains one Saturday and one Sunday.
+      const after = await sql<{ duration_days: number }[]>`
+        SELECT duration_days FROM work_item_schedules WHERE work_item_id = ${itemA}
+      `;
+      expect(after[0]?.duration_days).toBe(8);
+    });
+
+    it('mengecualikan hari libur yang dicatat', async () => {
+      await schedule.addHoliday(user, projectId, {
+        holidayDate: '2026-01-07',
+        name: 'Libur uji',
+      });
+
+      await schedule.saveWorkItemSchedule(user, projectId, itemA, {
+        plannedStart: '2026-01-05',
+        plannedFinish: '2026-01-14',
+        predecessorId: null,
+        dependencyType: 'FS',
+        lagDays: 0,
+      });
+
+      const [row] = await sql<{ duration_days: number }[]>`
+        SELECT duration_days FROM work_item_schedules WHERE work_item_id = ${itemA}
+      `;
+      expect(row?.duration_days).toBe(9);
+    });
+
+    it('menolak rentang yang seluruhnya jatuh pada hari non-kerja', async () => {
+      await schedule.setCountWeekends(user, projectId, false);
+
+      await expect(
+        schedule.saveWorkItemSchedule(user, projectId, itemA, {
+          // 10–11 Januari 2026 adalah Sabtu dan Minggu.
+          plannedStart: '2026-01-10',
+          plannedFinish: '2026-01-11',
+          predecessorId: null,
+          dependencyType: 'FS',
+          lagDays: 0,
+        }),
+      ).rejects.toThrow(/tidak memuat satu pun hari kerja/);
+    });
+
+    it('menyimpan satu baris per tanggal, bukan dua nama untuk satu absen', async () => {
+      await schedule.addHoliday(user, projectId, { holidayDate: '2026-03-01', name: 'Awal' });
+      await schedule.addHoliday(user, projectId, { holidayDate: '2026-03-01', name: 'Revisi' });
+
+      const rows = await schedule.listHolidays(userId, projectId);
+      const onDate = rows.filter((row) => row.holidayDate === '2026-03-01');
+      expect(onDate).toHaveLength(1);
+      expect(onDate[0]?.name).toBe('Revisi');
+    });
+
+    it('menghapus hari libur dan mengembalikan durasinya', async () => {
+      const { id } = await schedule.addHoliday(user, projectId, {
+        holidayDate: '2026-01-07',
+        name: 'Libur uji',
+      });
+
+      await schedule.deleteHoliday(user, projectId, id);
+      expect(await schedule.listHolidays(userId, projectId)).toEqual([]);
+    });
+  });
+
   describe('distribusi rencana', () => {
     beforeEach(async () => {
       await schedule.regeneratePeriods(user, projectId);

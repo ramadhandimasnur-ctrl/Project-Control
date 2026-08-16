@@ -45,6 +45,31 @@ export const schedulePeriods = pgTable(
   ],
 );
 
+/**
+ * Days the project does not work, beyond the weekend rule.
+ *
+ * Stored per project rather than per organisation: a national holiday stops
+ * most sites but not all of them, and a project working through Idul Fitri on
+ * a deadline is a decision its own schedule has to reflect.
+ */
+export const projectHolidays = pgTable(
+  'project_holidays',
+  {
+    id: primaryId(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    holidayDate: day('holiday_date').notNull(),
+    name: text('name').notNull(),
+    ...auditColumns(),
+  },
+  (t) => [
+    // One row per date: two entries for the same day would be two names for
+    // one absence, and the calendar only cares that nobody is on site.
+    uniqueIndex('project_holidays_project_date_unique').on(t.projectId, t.holidayDate),
+  ],
+);
+
 export const workItemSchedules = pgTable(
   'work_item_schedules',
   {

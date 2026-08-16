@@ -14,7 +14,7 @@ import { registerAction, type AuthFormState } from '../actions';
 const INITIAL: AuthFormState = {};
 
 type Field = {
-  name: 'organizationName' | 'fullName' | 'email' | 'password' | 'confirmPassword';
+  name: 'username' | 'fullName' | 'email' | 'password' | 'confirmPassword';
   label: string;
   type: string;
   autoComplete: string;
@@ -22,14 +22,14 @@ type Field = {
 };
 
 const FIELDS: Field[] = [
-  {
-    name: 'organizationName',
-    label: 'Nama organisasi',
-    type: 'text',
-    autoComplete: 'organization',
-    hint: 'Nama perusahaan atau badan usaha Anda.',
-  },
   { name: 'fullName', label: 'Nama lengkap', type: 'text', autoComplete: 'name' },
+  {
+    name: 'username',
+    label: 'Username',
+    type: 'text',
+    autoComplete: 'username',
+    hint: 'Huruf, angka, titik, garis bawah, dan strip. Dipakai sebagai nama tampilan.',
+  },
   { name: 'email', label: 'Email', type: 'email', autoComplete: 'email' },
   {
     name: 'password',
@@ -52,9 +52,10 @@ export function RegisterForm() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Daftar organisasi baru</CardTitle>
+        <CardTitle>Daftar akun</CardTitle>
         <CardDescription>
-          Akun pertama menjadi administrator organisasi dan dapat menambahkan anggota lain.
+          Pendaftaran ditinjau administrator terlebih dahulu. Anda dapat masuk setelah akun
+          disetujui dan perannya ditentukan.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -68,7 +69,7 @@ export function RegisterForm() {
 
           {state.notice ? (
             <Alert>
-              <AlertTitle>Pendaftaran berhasil</AlertTitle>
+              <AlertTitle>Pendaftaran terkirim</AlertTitle>
               <AlertDescription>{state.notice}</AlertDescription>
             </Alert>
           ) : null}

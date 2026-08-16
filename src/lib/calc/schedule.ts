@@ -54,15 +54,113 @@ export type GeneratedPeriod = {
 const ISO = 'yyyy-MM-dd';
 const toISO = (date: Date): string => formatDate(date, ISO);
 
-/** Inclusive day count: a task that starts and ends today lasts one day. */
-export function durationBetween(startDate: string, endDate: string): number {
-  return differenceInCalendarDays(parseISO(endDate), parseISO(startDate)) + 1;
+// --- working calendar -------------------------------------------------------
+
+/**
+ * Which days the project actually works.
+ *
+ * A schedule drawn on calendar days quietly promises Sundays and Idul Fitri.
+ * On a six-week job the difference between 42 calendar days and 30 working days
+ * is not a rounding error — it is the whole argument about whether the project
+ * is late.
+ */
+export type WorkCalendar = {
+  /** True when Saturdays and Sundays count as working days. */
+  countWeekends: boolean;
+  /** ISO dates excluded regardless of what day of the week they fall on. */
+  holidays: ReadonlySet<string>;
+};
+
+/**
+ * Every day is a working day.
+ *
+ * The default everywhere a calendar is optional, so behaviour is unchanged for
+ * a project that has not configured one — the feature has to be switched on
+ * deliberately rather than silently reinterpreting existing schedules.
+ */
+export const ALL_DAYS: WorkCalendar = { countWeekends: true, holidays: new Set() };
+
+export function isWorkingDay(isoDate: string, calendar: WorkCalendar = ALL_DAYS): boolean {
+  if (calendar.holidays.has(isoDate)) return false;
+  if (calendar.countWeekends) return true;
+
+  const day = parseISO(isoDate).getDay();
+  return day !== 0 && day !== 6;
 }
 
-/** The finish date implied by a start and an inclusive duration. */
-export function finishFromDuration(startDate: string, durationDays: number): string {
+/**
+ * Inclusive working-day count between two dates.
+ *
+ * Returns 0 rather than a negative when the range is inverted, and 0 when every
+ * day in it is a holiday — a span with no working days in it genuinely has no
+ * duration, and reporting 1 would invent a day of work.
+ */
+export function workingDaysBetween(
+  startDate: string,
+  endDate: string,
+  calendar: WorkCalendar = ALL_DAYS,
+): number {
+  const span = differenceInCalendarDays(parseISO(endDate), parseISO(startDate));
+  if (span < 0) return 0;
+
+  const start = parseISO(startDate);
+  let total = 0;
+  for (let offset = 0; offset <= span; offset += 1) {
+    if (isWorkingDay(toISO(addDays(start, offset)), calendar)) total += 1;
+  }
+  return total;
+}
+
+/**
+ * Inclusive day count: a task that starts and ends today lasts one day.
+ *
+ * With a calendar, non-working days drop out — which is what a duration is
+ * supposed to mean once a project declares that it does not work Sundays.
+ */
+export function durationBetween(
+  startDate: string,
+  endDate: string,
+  calendar: WorkCalendar = ALL_DAYS,
+): number {
+  if (calendar === ALL_DAYS || (calendar.countWeekends && calendar.holidays.size === 0)) {
+    return differenceInCalendarDays(parseISO(endDate), parseISO(startDate)) + 1;
+  }
+  return workingDaysBetween(startDate, endDate, calendar);
+}
+
+/**
+ * The finish date implied by a start and an inclusive duration.
+ *
+ * With a calendar the walk skips non-working days, so a five-day task starting
+ * on a Friday finishes the following Thursday rather than the Tuesday. The
+ * start itself is advanced to the first working day: a task cannot begin on a
+ * day nobody is on site.
+ */
+export function finishFromDuration(
+  startDate: string,
+  durationDays: number,
+  calendar: WorkCalendar = ALL_DAYS,
+): string {
   if (durationDays < 1) throw new RangeError('Durasi minimal 1 hari.');
-  return toISO(addDays(parseISO(startDate), durationDays - 1));
+
+  if (calendar.countWeekends && calendar.holidays.size === 0) {
+    return toISO(addDays(parseISO(startDate), durationDays - 1));
+  }
+
+  let cursor = parseISO(startDate);
+  let remaining = durationDays;
+
+  // Bounded so a calendar that somehow excludes every day cannot spin forever.
+  const LIMIT = durationDays * 7 + 366;
+  for (let step = 0; step < LIMIT; step += 1) {
+    if (isWorkingDay(toISO(cursor), calendar)) {
+      remaining -= 1;
+      if (remaining === 0) return toISO(cursor);
+    }
+    cursor = addDays(cursor, 1);
+  }
+
+  throw new RangeError('Kalender kerja tidak memiliki cukup hari kerja untuk durasi ini.');
 }
 
 /**
@@ -188,17 +286,29 @@ export type PeriodRange = { id: string; startDate: string; endDate: string };
 
 export type DistributionRow = { periodId: string; plannedPct: Decimal };
 
-/** Days of [aStart, aEnd] that also fall inside [bStart, bEnd], inclusive. */
+/**
+ * Days of [aStart, aEnd] that also fall inside [bStart, bEnd], inclusive.
+ *
+ * With a calendar, only working days count. That matters for distribution: a
+ * period containing a long holiday should receive less of the work than the
+ * one beside it, and counting raw calendar days would hand it the same share.
+ */
 export function overlapDays(
   aStart: string,
   aEnd: string,
   bStart: string,
   bEnd: string,
+  calendar: WorkCalendar = ALL_DAYS,
 ): number {
   const start = differenceInCalendarDays(parseISO(aStart), parseISO(bStart)) > 0 ? aStart : bStart;
   const end = differenceInCalendarDays(parseISO(aEnd), parseISO(bEnd)) < 0 ? aEnd : bEnd;
-  const days = differenceInCalendarDays(parseISO(end), parseISO(start)) + 1;
-  return days > 0 ? days : 0;
+
+  if (calendar.countWeekends && calendar.holidays.size === 0) {
+    const days = differenceInCalendarDays(parseISO(end), parseISO(start)) + 1;
+    return days > 0 ? days : 0;
+  }
+
+  return workingDaysBetween(start, end, calendar);
 }
 
 /**
@@ -214,6 +324,7 @@ export function distributeByDuration(
   periods: readonly PeriodRange[],
   plannedStart: string,
   plannedFinish: string,
+  calendar: WorkCalendar = ALL_DAYS,
 ): DistributionRow[] {
   if (differenceInCalendarDays(parseISO(plannedFinish), parseISO(plannedStart)) < 0) {
     throw new RangeError('Tanggal selesai pekerjaan mendahului tanggal mulai.');
@@ -222,7 +333,7 @@ export function distributeByDuration(
   const touched = periods
     .map((period) => ({
       periodId: period.id,
-      days: overlapDays(plannedStart, plannedFinish, period.startDate, period.endDate),
+      days: overlapDays(plannedStart, plannedFinish, period.startDate, period.endDate, calendar),
     }))
     .filter((entry) => entry.days > 0);
 

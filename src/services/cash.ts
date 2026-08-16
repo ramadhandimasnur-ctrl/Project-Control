@@ -10,7 +10,6 @@ import {
   cashTransactions,
   paymentClaims,
   paymentTerms,
-  progressEntries,
   projects,
   schedulePeriods,
 } from '@/db/schema';
@@ -23,7 +22,6 @@ import {
   performanceVerdict,
   toStrings as toEarnedValueStrings,
 } from '@/lib/calc/earned-value';
-import { completionByItem } from '@/lib/calc/progress';
 import {
   type CashCategory,
   type CashDirection,
@@ -45,6 +43,7 @@ import { getProjectEstimate } from './ahsp';
 import { writeAuditLog } from './audit';
 import { getProgressComparison } from './progress';
 import { getScheduleOverview } from './schedule';
+import { getSimulationCandidates } from './scope';
 import { type SessionUser } from './session';
 
 export type TermType = 'DOWN_PAYMENT' | 'PROGRESS' | 'MILESTONE' | 'RETENTION';
@@ -1104,62 +1103,14 @@ export async function getCapitalPlan(
 ): Promise<CapitalPlan> {
   await assertProjectAccess(userId, projectId, 'VIEWER');
 
-  const [estimate, overview, comparison, summary] = await Promise.all([
+  const [estimate, candidates, comparison, summary] = await Promise.all([
     getProjectEstimate(userId, projectId),
-    getScheduleOverview(userId, projectId),
+    getSimulationCandidates(userId, projectId),
     getProgressComparison(userId, projectId).catch(() => null),
     getFinancialSummary(userId, projectId),
   ]);
 
-  const approved = await db
-    .select({
-      workItemId: progressEntries.workItemId,
-      periodId: progressEntries.periodId,
-      pctThisPeriod: progressEntries.pctThisPeriod,
-    })
-    .from(progressEntries)
-    .where(
-      and(eq(progressEntries.projectId, projectId), eq(progressEntries.status, 'APPROVED')),
-    );
-
-  const completion = new Map(
-    completionByItem(
-      approved,
-      estimate.items.map((item) => item.workItemId),
-    ).map((row) => [row.workItemId, row.completion]),
-  );
-
-  /*
-   * Plan order: the first period each item is scheduled to be worked in.
-   *
-   * Items with no plan sort last rather than first — an unscheduled item is
-   * the least certain thing to promise, and putting it at the head of a cash
-   * forecast would be the wrong kind of optimism.
-   */
-  const seqOf = new Map(overview.periods.map((period) => [period.id, period.seq]));
-  const firstPeriod = new Map<string, number>();
-  for (const cell of overview.effectivePlan) {
-    const seq = seqOf.get(cell.periodId);
-    if (seq === undefined) continue;
-    const current = firstPeriod.get(cell.workItemId);
-    if (current === undefined || seq < current) firstPeriod.set(cell.workItemId, seq);
-  }
-
-  const UNSCHEDULED = Number.MAX_SAFE_INTEGER;
-
-  const simulation = simulateCapitalNeed(
-    estimate.items.map((item) => ({
-      workItemId: item.workItemId,
-      code: item.code,
-      name: item.name,
-      weight: item.includeInProgressWeight ? item.weight : '0',
-      totalRab: item.totalRab,
-      totalRap: item.totalRap,
-      completed: (completion.get(item.workItemId) ?? toDecimal(0)).toString(),
-      order: firstPeriod.get(item.workItemId) ?? UNSCHEDULED,
-    })),
-    targetWeight,
-  );
+  const simulation = simulateCapitalNeed(candidates, targetWeight);
 
   const plannedCumulative = toDecimal(comparison?.current.plannedCumulative ?? 0);
   const actualCumulative = toDecimal(comparison?.current.actualCumulative ?? 0);

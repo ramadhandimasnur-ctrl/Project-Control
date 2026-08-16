@@ -8,6 +8,20 @@ import { pgEnum } from 'drizzle-orm/pg-core';
 // --- Organisation & access -------------------------------------------------
 export const globalRoleEnum = pgEnum('global_role', ['ADMIN', 'MEMBER']);
 
+/**
+ * Where an account stands in the approval workflow.
+ *
+ * Distinct from `is_active`, which is the enforcement flag the RLS helpers and
+ * the session read. A check constraint ties the two together so they cannot
+ * drift: only ACTIVE is active.
+ */
+export const userStatusEnum = pgEnum('user_status', [
+  'PENDING',
+  'ACTIVE',
+  'REJECTED',
+  'DEACTIVATED',
+]);
+
 export const projectRoleEnum = pgEnum('project_role', [
   'ADMIN',
   'PROJECT_MANAGER',

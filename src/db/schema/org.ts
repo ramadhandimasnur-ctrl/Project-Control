@@ -1,7 +1,8 @@
-import { boolean, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { boolean, check, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
 import { createdAtColumn, primaryId, updatedAtColumn } from './_shared';
-import { globalRoleEnum } from './enums';
+import { globalRoleEnum, userStatusEnum } from './enums';
 
 export const organizations = pgTable('organizations', {
   id: primaryId(),
@@ -24,12 +25,31 @@ export const users = pgTable(
       .references(() => organizations.id, { onDelete: 'restrict' }),
     email: text('email').notNull(),
     fullName: text('full_name').notNull(),
+    /** Display handle chosen at registration. Email remains the credential. */
+    username: text('username'),
     globalRole: globalRoleEnum('global_role').notNull().default('MEMBER'),
+    status: userStatusEnum('status').notNull().default('ACTIVE'),
     isActive: boolean('is_active').notNull().default(true),
+    /** Who approved or rejected, and when — the decision has to be traceable. */
+    reviewedBy: uuid('reviewed_by'),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
-  (t) => [uniqueIndex('users_email_unique').on(t.email)],
+  (t) => [
+    uniqueIndex('users_email_unique').on(t.email),
+    uniqueIndex('users_username_unique').on(t.username),
+    /*
+     * The invariant that keeps the workflow honest.
+     *
+     * `is_active` is what the session and every RLS helper actually read, and
+     * `status` is what the admin screen shows. Written separately they would
+     * eventually disagree — a rejected account still able to sign in, or an
+     * active one locked out — so the database refuses the combination rather
+     * than trusting every future caller to set both.
+     */
+    check('users_status_matches_active', sql`${t.isActive} = (${t.status} = 'ACTIVE')`),
+  ],
 );
 
 /**

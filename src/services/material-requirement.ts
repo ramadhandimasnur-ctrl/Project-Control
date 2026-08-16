@@ -7,7 +7,9 @@ import { withUser } from '@/db/context';
 import { resources, units, workItemResources, workItems } from '@/db/schema';
 import { toDecimal } from '@/lib/calc/decimal';
 import { todayIso } from '@/lib/date';
+import { simulateCapitalNeed } from '@/lib/calc/capital';
 import {
+  materialForScope,
   rankByShortage,
   rankByWastage,
   summariseMaterial,
@@ -19,6 +21,7 @@ import {
 import { assertProjectAccess } from './access';
 import { canViewOrgCosts } from './org-access';
 import { resolvePriceMap } from './prices';
+import { getSimulationCandidates } from './scope';
 
 /**
  * The material requirement table — charter section 6.5.
@@ -243,6 +246,177 @@ export async function getMaterialRequirement(
 }
 
 /** Resource ids referenced by the project, for pickers. */
+// --- scope simulation -------------------------------------------------------
+
+export type MaterialScope = {
+  targetWeight: string;
+  currentWeight: string;
+  gap: string;
+  achievable: boolean;
+  /** The work items the target requires, and how much of each. */
+  workItems: { code: string; name: string; requiredFraction: string }[];
+  rows: {
+    resourceCode: string;
+    resourceName: string;
+    unitCode: string;
+    required: string;
+    stock: string;
+    toBuy: string;
+    priceRap: string | null;
+    cost: string | null;
+  }[];
+  totalCost: string;
+  unpriced: { resourceCode: string; resourceName: string }[];
+  showCosts: boolean;
+};
+
+/**
+ * Material a progress target consumes, and what still has to be bought.
+ *
+ * The scope comes from the same simulation the capital page uses, so the
+ * purchasing list and the cash figure describe the same stretch of work in the
+ * same plan order.
+ */
+export async function getMaterialScope(
+  userId: string,
+  projectId: string,
+  /** Null asks for the next quarter above today's progress. */
+  targetWeight: string | null,
+  onDate: string = todayIso(),
+): Promise<MaterialScope> {
+  await assertProjectAccess(userId, projectId, 'VIEWER');
+  const showCosts = await canViewOrgCosts(userId);
+
+  const candidates = await getSimulationCandidates(userId, projectId);
+
+  /*
+   * Defaulting lives here rather than in the page so the two callers cannot
+   * open on different targets — and so working out "where are we now" does not
+   * cost a second pass over the whole estimate.
+   */
+  const current = simulateCapitalNeed(candidates, '0').currentWeight;
+  const resolvedTarget =
+    targetWeight ??
+    String(Math.min(Math.floor(current.times(100).toNumber() / 25) * 25 + 25, 100) / 100);
+
+  const simulation = simulateCapitalNeed(candidates, resolvedTarget);
+
+  const fractionOf = new Map(
+    simulation.rows.map((row) => [row.workItemId, row.requiredFraction.toString()]),
+  );
+
+  const empty: MaterialScope = {
+    targetWeight: simulation.targetWeight.toString(),
+    currentWeight: simulation.currentWeight.toString(),
+    gap: simulation.gap.toString(),
+    achievable: simulation.achievable,
+    workItems: [],
+    rows: [],
+    totalCost: '0',
+    unpriced: [],
+    showCosts,
+  };
+
+  if (fractionOf.size === 0) return empty;
+
+  const demand = await db
+    .select({
+      workItemId: workItems.id,
+      resourceId: workItemResources.resourceId,
+      volume: workItems.volume,
+      coefRap: workItemResources.coefRap,
+      wasteFactor: workItemResources.wasteFactor,
+      resourceCode: resources.code,
+      resourceName: resources.name,
+      unitCode: units.code,
+    })
+    .from(workItemResources)
+    .innerJoin(workItems, eq(workItems.id, workItemResources.workItemId))
+    .innerJoin(resources, eq(resources.id, workItemResources.resourceId))
+    .innerJoin(units, eq(units.id, resources.unitId))
+    .where(
+      and(
+        eq(workItems.projectId, projectId),
+        eq(workItems.isActive, true),
+        inArray(workItems.id, [...fractionOf.keys()]),
+        /*
+         * Materials only. The AHSP lines of a work item also carry labour,
+         * equipment and subcontract rows, and those are costs rather than
+         * things anyone procures into a store — "beli 30 OH Pekerja" is not a
+         * purchase order. The requirement table below keeps every kind,
+         * because its question is about what left the warehouse.
+         */
+        eq(resources.type, 'MATERIAL'),
+      ),
+    );
+
+  if (demand.length === 0) {
+    return {
+      ...empty,
+      workItems: simulation.rows.map((row) => ({
+        code: row.code,
+        name: row.name,
+        requiredFraction: row.requiredFraction.toString(),
+      })),
+    };
+  }
+
+  const resourceIds = [...new Set(demand.map((row) => row.resourceId))];
+
+  const [stockRows, priceMap] = await Promise.all([
+    withUser(userId, (tx) =>
+      tx.execute<{ resource_id: string; qty_on_hand: string }>(sql`
+        SELECT resource_id, coalesce(sum(qty_on_hand), 0)::text AS qty_on_hand
+        FROM v_inventory_balance
+        WHERE project_id = ${projectId}
+        GROUP BY resource_id
+      `),
+    ),
+    showCosts
+      ? resolvePriceMap(resourceIds, projectId, 'RAP', onDate)
+      : Promise.resolve(null),
+  ]);
+
+  const stockBy = new Map(stockRows.map((row) => [row.resource_id, row.qty_on_hand]));
+
+  const scope = materialForScope(
+    demand.map((row) => ({
+      resourceId: row.resourceId,
+      resourceCode: row.resourceCode,
+      resourceName: row.resourceName,
+      unitCode: row.unitCode,
+      volume: row.volume,
+      coefRap: row.coefRap,
+      wasteFactor: row.wasteFactor,
+      fraction: fractionOf.get(row.workItemId) ?? '0',
+      priceRap: priceMap?.resolved.get(row.resourceId)?.price.toString() ?? null,
+      stock: stockBy.get(row.resourceId) ?? '0',
+    })),
+  );
+
+  return {
+    ...empty,
+    workItems: simulation.rows.map((row) => ({
+      code: row.code,
+      name: row.name,
+      requiredFraction: row.requiredFraction.toString(),
+    })),
+    rows: scope.rows.map((row) => ({
+      resourceCode: row.resourceCode,
+      resourceName: row.resourceName,
+      unitCode: row.unitCode,
+      required: row.required.toString(),
+      stock: row.stock.toString(),
+      toBuy: row.toBuy.toString(),
+      priceRap: row.priceRap === null ? null : row.priceRap.toString(),
+      cost: row.cost === null ? null : row.cost.toString(),
+    })),
+    totalCost: scope.totalCost.toString(),
+    // Only meaningful when prices were fetched at all.
+    unpriced: showCosts ? scope.unpriced : [],
+  };
+}
+
 export async function listProjectResources(userId: string, projectId: string) {
   await assertProjectAccess(userId, projectId, 'VIEWER');
 

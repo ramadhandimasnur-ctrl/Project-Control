@@ -10,13 +10,16 @@ import {
 } from '@/lib/validation/schedule';
 import {
   activateBaseline,
+  addHoliday,
   autoDistributeWorkItem,
   createBaseline,
+  deleteHoliday,
   previewPeriodPlan,
   regeneratePeriods,
   savePlannedDistribution,
   savePlannedDistributions,
   saveWorkItemSchedule,
+  setCountWeekends,
   type PeriodPlanPreview,
 } from '@/services/schedule';
 import { requireSessionUser } from '@/services/session';
@@ -44,6 +47,58 @@ function fieldErrorsOf(issues: { path: PropertyKey[]; message: string }[]): Reco
 function revalidateSchedule(projectId: string): void {
   revalidatePath(`/projects/${projectId}/schedule`);
   revalidatePath(`/projects/${projectId}/scurve`);
+}
+
+// --- working calendar -------------------------------------------------------
+
+export async function setCountWeekendsAction(
+  projectId: string,
+  countWeekends: boolean,
+): Promise<ActionResult> {
+  try {
+    const user = await requireSessionUser();
+    await setCountWeekends(user, projectId, countWeekends);
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidateSchedule(projectId);
+  return { ok: true };
+}
+
+export async function addHolidayAction(
+  projectId: string,
+  raw: { holidayDate: string; name: string },
+): Promise<ActionResult> {
+  const date = String(raw.holidayDate ?? '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return { ok: false, message: 'Tanggal libur tidak valid.' };
+  }
+
+  try {
+    const user = await requireSessionUser();
+    await addHoliday(user, projectId, { holidayDate: date, name: String(raw.name ?? '') });
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidateSchedule(projectId);
+  return { ok: true };
+}
+
+export async function deleteHolidayAction(
+  projectId: string,
+  holidayId: string,
+): Promise<ActionResult> {
+  try {
+    const user = await requireSessionUser();
+    await deleteHoliday(user, projectId, holidayId);
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidateSchedule(projectId);
+  return { ok: true };
 }
 
 // --- periods ----------------------------------------------------------------

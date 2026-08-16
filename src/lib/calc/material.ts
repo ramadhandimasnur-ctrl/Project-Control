@@ -1,4 +1,13 @@
-import { type Decimal, safeDivide, sumBy, toDecimal, type Numeric } from './decimal';
+import {
+  type Decimal,
+  ZERO,
+  clamp,
+  roundQuantity,
+  safeDivide,
+  sumBy,
+  toDecimal,
+  type Numeric,
+} from './decimal';
 
 /**
  * Material requirement, stock and wastage — charter section 5.6.
@@ -180,6 +189,125 @@ export function summariseMaterial(input: MaterialSummaryInput): MaterialSummary 
 }
 
 /** The most critical shortages first, for the dashboard's watch list. */
+// --- scope simulation -------------------------------------------------------
+
+export type ScopeLine = {
+  resourceId: string;
+  resourceCode: string;
+  resourceName: string;
+  unitCode: string;
+  /** The work item's full volume. */
+  volume: Numeric;
+  coefRap: Numeric;
+  wasteFactor: Numeric;
+  /** How much of the work item is inside the scope being asked about, 0..1. */
+  fraction: Numeric;
+  /** Unit price, or null when the price book has no entry in force. */
+  priceRap: Numeric | null;
+  /** What is already on hand, subtracted once per resource. */
+  stock: Numeric;
+};
+
+export type ScopeRow = {
+  resourceId: string;
+  resourceCode: string;
+  resourceName: string;
+  unitCode: string;
+  /** Everything the scope consumes, waste included. */
+  required: Decimal;
+  stock: Decimal;
+  /** Required minus stock, floored at zero — what still has to be bought. */
+  toBuy: Decimal;
+  priceRap: Decimal | null;
+  /** toBuy × price, or null when the price is unknown. */
+  cost: Decimal | null;
+};
+
+export type ScopeMaterial = {
+  rows: ScopeRow[];
+  /** Σ of the costs that could be priced. */
+  totalCost: Decimal;
+  /** Resources with no price in force; the total above understates by these. */
+  unpriced: { resourceCode: string; resourceName: string }[];
+};
+
+/**
+ * Material a slice of the project consumes, and what still has to be bought.
+ *
+ * Aggregated per resource across every work item in scope: cement appears once
+ * with its total, not once per work item that uses it, because the question
+ * being asked is a purchasing question.
+ *
+ * Stock is subtracted once per resource rather than per line — deducting it
+ * against each work item separately would spend the same sack of cement several
+ * times over and understate the order.
+ *
+ * A resource with no price contributes quantity but not cost, and is named
+ * separately. Pricing it at zero would produce a total that looks complete and
+ * is quietly short.
+ */
+export function materialForScope(lines: readonly ScopeLine[]): ScopeMaterial {
+  const byResource = new Map<
+    string,
+    { line: ScopeLine; required: Decimal }
+  >();
+
+  for (const line of lines) {
+    const fraction = clamp(toDecimal(line.fraction), 0, 1);
+    if (fraction.isZero()) continue;
+
+    const required = lineRequirement({
+      workItemId: line.resourceId,
+      volume: line.volume,
+      coefRap: line.coefRap,
+      wasteFactor: line.wasteFactor,
+    }).times(fraction);
+
+    const existing = byResource.get(line.resourceId);
+    if (existing) existing.required = existing.required.plus(required);
+    else byResource.set(line.resourceId, { line, required });
+  }
+
+  const rows: ScopeRow[] = [];
+  const unpriced: ScopeMaterial['unpriced'] = [];
+  let totalCost = ZERO;
+
+  for (const { line, required } of byResource.values()) {
+    const stock = toDecimal(line.stock);
+    const rawToBuy = required.minus(stock);
+    const toBuy = rawToBuy.isNegative() ? ZERO : rawToBuy;
+    const price = line.priceRap === null ? null : toDecimal(line.priceRap);
+    const cost = price === null ? null : toBuy.times(price);
+
+    if (price === null) {
+      unpriced.push({ resourceCode: line.resourceCode, resourceName: line.resourceName });
+    } else if (cost !== null) {
+      totalCost = totalCost.plus(cost);
+    }
+
+    rows.push({
+      resourceId: line.resourceId,
+      resourceCode: line.resourceCode,
+      resourceName: line.resourceName,
+      unitCode: line.unitCode,
+      required: roundQuantity(required),
+      stock: roundQuantity(stock),
+      toBuy: roundQuantity(toBuy),
+      priceRap: price,
+      cost,
+    });
+  }
+
+  // Biggest spend first: a purchasing list is read from the top and acted on
+  // until the budget runs out. Unpriced rows sort by quantity among themselves.
+  rows.sort((a, b) => {
+    const costOrder = Number(b.cost ?? 0) - Number(a.cost ?? 0);
+    return costOrder !== 0 ? costOrder : Number(b.toBuy) - Number(a.toBuy);
+  });
+
+  return { rows, totalCost, unpriced };
+}
+
 export function rankByShortage<T extends { shortage: Decimal }>(rows: readonly T[]): T[] {
   return [...rows].sort((a, b) => b.shortage.comparedTo(a.shortage));
 }

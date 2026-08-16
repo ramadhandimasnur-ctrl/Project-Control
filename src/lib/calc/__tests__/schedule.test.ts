@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { toDecimal } from '../decimal';
 import {
+  ALL_DAYS,
   MAX_PERIODS,
   barPosition,
   checkDistributions,
@@ -10,10 +11,12 @@ import {
   finishFromDuration,
   generatePeriods,
   isPartialPeriod,
+  isWorkingDay,
   normalizeToOne,
   overlapDays,
   periodOn,
   plannedSCurve,
+  workingDaysBetween,
 } from '../schedule';
 
 const pct = (row: { plannedPct: { toString(): string } }) => row.plannedPct.toString();
@@ -219,6 +222,82 @@ describe('normalizeToOne', () => {
 
   it('handles an empty plan', () => {
     expect(normalizeToOne([])).toEqual([]);
+  });
+});
+
+describe('kalender kerja', () => {
+  // 2026-01-03 is a Saturday, 2026-01-04 a Sunday.
+  const noWeekends = { countWeekends: false, holidays: new Set<string>() };
+  const withHoliday = { countWeekends: false, holidays: new Set(['2026-01-06']) };
+
+  it('counts every day when the project works weekends', () => {
+    expect(durationBetween('2026-01-01', '2026-01-07')).toBe(7);
+    expect(durationBetween('2026-01-01', '2026-01-07', ALL_DAYS)).toBe(7);
+  });
+
+  it('drops Saturdays and Sundays when the project does not work them', () => {
+    expect(isWorkingDay('2026-01-03', noWeekends)).toBe(false);
+    expect(isWorkingDay('2026-01-04', noWeekends)).toBe(false);
+    expect(isWorkingDay('2026-01-05', noWeekends)).toBe(true);
+    expect(durationBetween('2026-01-01', '2026-01-07', noWeekends)).toBe(5);
+  });
+
+  it('drops a declared holiday whatever day it falls on', () => {
+    expect(isWorkingDay('2026-01-06', withHoliday)).toBe(false);
+    expect(durationBetween('2026-01-01', '2026-01-07', withHoliday)).toBe(4);
+  });
+
+  /*
+   * A span with no working days in it genuinely has no duration. Reporting 1
+   * would invent a day of work nobody is on site for.
+   */
+  it('reports zero when nothing in the range is worked', () => {
+    expect(workingDaysBetween('2026-01-03', '2026-01-04', noWeekends)).toBe(0);
+  });
+
+  it('refuses an inverted range rather than counting backwards', () => {
+    expect(workingDaysBetween('2026-01-07', '2026-01-01', noWeekends)).toBe(0);
+  });
+
+  it('walks past non-working days when deriving a finish date', () => {
+    // Friday 2026-01-02 plus five working days lands on Thursday the 8th.
+    expect(finishFromDuration('2026-01-02', 5, noWeekends)).toBe('2026-01-08');
+    // Same span with the 6th declared a holiday pushes one further.
+    expect(finishFromDuration('2026-01-02', 5, withHoliday)).toBe('2026-01-09');
+  });
+
+  it('keeps the plain calendar behaviour when no calendar is given', () => {
+    expect(finishFromDuration('2026-01-02', 5)).toBe('2026-01-06');
+  });
+
+  /*
+   * Distribution has to follow the same calendar: a period swallowed by a long
+   * holiday should receive less of the work than the one beside it, and raw
+   * calendar days would hand both the same share.
+   */
+  it('distributes by working days, not calendar days', () => {
+    const periods = [
+      { id: 'p1', startDate: '2026-01-01', endDate: '2026-01-04' },
+      { id: 'p2', startDate: '2026-01-05', endDate: '2026-01-08' },
+    ];
+
+    const plain = distributeByDuration(periods, '2026-01-01', '2026-01-08');
+    expect(plain.map(pct)).toEqual(['0.5', '0.5']);
+
+    // Without weekends p1 keeps only Thu+Fri while p2 keeps all four days.
+    const worked = distributeByDuration(periods, '2026-01-01', '2026-01-08', noWeekends);
+    expect(worked.map(pct)).toEqual(['0.333333', '0.666667']);
+  });
+
+  it('leaves out a period that is entirely non-working', () => {
+    const periods = [
+      { id: 'weekend', startDate: '2026-01-03', endDate: '2026-01-04' },
+      { id: 'week', startDate: '2026-01-05', endDate: '2026-01-09' },
+    ];
+
+    const rows = distributeByDuration(periods, '2026-01-03', '2026-01-09', noWeekends);
+    expect(rows.map((row) => row.periodId)).toEqual(['week']);
+    expect(rows.map(pct)).toEqual(['1']);
   });
 });
 

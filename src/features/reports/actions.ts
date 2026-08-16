@@ -3,7 +3,13 @@
 import { revalidatePath } from 'next/cache';
 
 import { toUserMessage } from '@/lib/errors';
-import { deleteIssue, publishReport, saveIssue, type ReportType } from '@/services/reports';
+import {
+  deleteIssue,
+  deleteSnapshots,
+  publishReport,
+  saveIssue,
+  type ReportType,
+} from '@/services/reports';
 import { requireSessionUser } from '@/services/session';
 
 export type ActionResult = { ok: true } | { ok: false; message: string; hint?: string };
@@ -15,6 +21,24 @@ function failure(error: unknown): { ok: false; message: string; hint?: string } 
 
 function revalidateReports(projectId: string): void {
   revalidatePath(`/projects/${projectId}/reports`);
+}
+
+export type DeleteSnapshotsResult =
+  | { ok: true; deleted: number; refused: { id: string; reason: string }[] }
+  | { ok: false; message: string; hint?: string };
+
+export async function deleteSnapshotsAction(
+  projectId: string,
+  snapshotIds: string[],
+): Promise<DeleteSnapshotsResult> {
+  try {
+    const user = await requireSessionUser();
+    const result = await deleteSnapshots(user, projectId, snapshotIds);
+    revalidateReports(projectId);
+    return { ok: true, deleted: result.deleted, refused: result.refused };
+  } catch (error) {
+    return failure(error);
+  }
 }
 
 export type PublishResult = { ok: true; id: string } | { ok: false; message: string; hint?: string };

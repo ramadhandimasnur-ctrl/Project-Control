@@ -36,6 +36,15 @@ export const projects = pgTable(
     durationUnit: durationUnitEnum('duration_unit').notNull().default('DAY'),
     periodType: periodTypeEnum('period_type').notNull().default('WEEK'),
 
+    /*
+     * Whether Saturdays and Sundays are worked.
+     *
+     * Defaults to true so existing projects keep the durations they were
+     * planned with; switching it off is a deliberate act that reinterprets the
+     * schedule, not something a migration should do on anyone's behalf.
+     */
+    countWeekends: boolean('count_weekends').notNull().default(true),
+
     // Tax and retention rates are project configuration — never hardcoded.
     retentionPercent: percent('retention_percent').notNull().default('0'),
     retentionReleaseDays: integer('retention_release_days').notNull().default(0),

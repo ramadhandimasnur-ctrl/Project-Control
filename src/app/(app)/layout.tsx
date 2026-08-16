@@ -34,6 +34,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             >
               Master Data
             </Link>
+            {/*
+              Shown to administrators only. The page enforces this for itself —
+              this merely avoids offering a link that answers with a refusal.
+            */}
+            {user.globalRole === 'ADMIN' ? (
+              <Link
+                href="/users"
+                className="rounded-md px-2 py-1.5 text-foreground/80 transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                Pengguna
+              </Link>
+            ) : null}
           </nav>
 
           <div className="ml-auto">

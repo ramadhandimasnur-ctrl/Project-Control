@@ -10,11 +10,12 @@ import { BaselineButton, BaselineList } from '@/features/schedule/baseline-actio
 import { DistributionMatrix } from '@/features/schedule/distribution-matrix';
 import { GanttChart } from '@/features/schedule/gantt-chart';
 import { PeriodSettings } from '@/features/schedule/period-settings';
+import { WorkCalendarPanel } from '@/features/schedule/work-calendar-panel';
 import { canEditContractTerms, canEditProjectData } from '@/lib/auth/roles';
 import { formatDay } from '@/lib/format';
 import { PERIOD_TYPE_LABELS } from '@/lib/validation/schedule';
 import { getProject } from '@/services/projects';
-import { getScheduleOverview, listBaselines } from '@/services/schedule';
+import { getScheduleOverview, listBaselines, listHolidays } from '@/services/schedule';
 import { requireSessionUser } from '@/services/session';
 
 export const metadata: Metadata = { title: 'Periode & Jadwal' };
@@ -29,9 +30,10 @@ export default async function SchedulePage({ params }: { params: Promise<{ id: s
   // the same authority as contract terms.
   const canManageBaseline = canEditContractTerms(project.role);
 
-  const [overview, baselines] = await Promise.all([
+  const [overview, baselines, holidays] = await Promise.all([
     getScheduleOverview(user.id, projectId),
     listBaselines(user.id, projectId),
+    listHolidays(user.id, projectId),
   ]);
 
   const codeOf = new Map(overview.rows.map((row) => [row.workItemId, row.code]));
@@ -106,7 +108,22 @@ export default async function SchedulePage({ params }: { params: Promise<{ id: s
             ) : (
               <Badge variant="outline">Belum ada baseline</Badge>
             )}
+            {!overview.workCalendar.countWeekends ? (
+              <Badge variant="outline">Tanpa akhir pekan</Badge>
+            ) : null}
+            {overview.workCalendar.holidays.length > 0 ? (
+              <Badge variant="outline">
+                {overview.workCalendar.holidays.length} hari libur
+              </Badge>
+            ) : null}
           </div>
+
+          <WorkCalendarPanel
+            projectId={projectId}
+            countWeekends={overview.workCalendar.countWeekends}
+            holidays={holidays}
+            canEdit={canEdit}
+          />
 
           {overview.incomplete.length > 0 ? (
             <Alert>

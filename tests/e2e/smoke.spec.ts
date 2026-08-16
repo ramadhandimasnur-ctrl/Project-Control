@@ -70,7 +70,10 @@ test('setiap modul proyek terbuka tanpa error', async ({ page }) => {
   const paths = [
     '',
     '/work-items',
+    // The old combined page, kept as a redirect; it must still land somewhere.
     '/estimate',
+    '/estimate/rab',
+    '/estimate/rap',
     '/schedule',
     '/scurve',
     '/progress',
@@ -100,6 +103,25 @@ test('setiap modul proyek terbuka tanpa error', async ({ page }) => {
     expect(errors, `${path} melempar error di peramban`).toEqual([]);
     page.removeAllListeners('pageerror');
   }
+});
+
+/*
+ * The seeded account is an organisation administrator, so this page must open.
+ * A member reaching it gets the refusal notice instead, which the service
+ * enforces rather than the route.
+ */
+test('panel pengguna terbuka bagi administrator', async ({ page }) => {
+  await signIn(page);
+
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+
+  const response = await page.goto('/users', { timeout: 45_000 });
+  expect(response?.status()).toBeLessThan(400);
+
+  await expect(page.getByRole('heading', { name: 'Pengguna' })).toBeVisible();
+  await expect(page.getByText('Menunggu persetujuan').first()).toBeVisible();
+  expect(errors).toEqual([]);
 });
 
 test('sidebar tidak menyisakan modul terkunci', async ({ page }) => {
