@@ -702,15 +702,44 @@ export async function rejectProgressEntry(
     );
   }
 
+  /*
+   * Approved progress can be sent back too.
+   *
+   * It is a heavier act than rejecting a pending claim: the figure has already
+   * moved the realised curve, and withdrawing it moves the curve back. That is
+   * the point — a supervisor who approved the wrong number needs a way to
+   * correct it, and the alternative is a fictional entry in a later period to
+   * cancel out an earlier one, which leaves both periods wrong.
+   *
+   * Reports already published keep their figures. They were frozen at the
+   * moment of issue precisely so that a later correction cannot rewrite what
+   * an owner was handed; the correction shows up in the next report.
+   */
   const entry = await entryById(projectId, entryId);
-  if (entry.status !== 'SUBMITTED') {
-    throw conflict('Hanya progres yang sedang diajukan yang dapat ditolak.');
+  if (entry.status !== 'SUBMITTED' && entry.status !== 'APPROVED') {
+    throw conflict(
+      'Hanya progres yang sedang diajukan atau sudah disetujui yang dapat ditolak.',
+      'Catatan draf atau yang sudah dibatalkan cukup diperbaiki langsung.',
+    );
   }
 
   await withUser(user.id, async (tx) => {
     await tx
       .update(progressEntries)
-      .set({ status: 'REJECTED', rejectReason: trimmed, updatedBy: user.id })
+      .set({
+        status: 'REJECTED',
+        rejectReason: trimmed,
+        /*
+         * The approval is cleared along with the status. Leaving the approver
+         * and timestamp behind would let the row keep claiming it was signed
+         * off by someone who has since taken that back.
+         */
+        approvedBy: null,
+        approvedAt: null,
+        submittedBy: null,
+        submittedAt: null,
+        updatedBy: user.id,
+      })
       .where(eq(progressEntries.id, entryId));
 
     await writeAuditLog(tx, {

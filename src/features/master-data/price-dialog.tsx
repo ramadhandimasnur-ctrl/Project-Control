@@ -1,9 +1,9 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2, Wand2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
@@ -36,10 +36,11 @@ import { TextAreaField, TextField } from './form-fields';
  * dialog took one type at a time, so keeping a pair in step meant opening it
  * twice and remembering to use the same effective date.
  *
- * The markup is a convenience that fills RAB from RAP, and a remembered
- * preference — not a live derivation. The price book records what was agreed
- * on a date; recomputing RAB whenever it is read would rewrite last year's
- * budget the moment someone revised the margin.
+ * Markup and RAB are two ends of one relationship, so editing either derives
+ * the other while RAP stays authoritative and is never rewritten. What gets
+ * saved is the number in the field, not the formula: the price book records
+ * what was agreed on a date, and recomputing RAB whenever it is read would
+ * rewrite last year's budget the moment someone revised the margin.
  */
 export function PriceDialog({
   open,
@@ -90,39 +91,85 @@ export function PriceDialog({
     return typeof entry?.message === 'string' ? entry.message : undefined;
   };
 
-  /**
-   * Fills RAB from RAP and the markup, on demand.
+  /*
+   * Which of the two derived fields the user is currently driving.
    *
-   * Deliberately a button rather than a live effect: typing "4" on the way to
-   * "48000" would otherwise rewrite the RAB field several times, and a figure
-   * that changes while you are still looking at it is hard to trust.
+   * RAB and markup describe the same relationship from opposite ends, so one
+   * of them is always a consequence of the other. Remembering which was
+   * touched last is what makes a later change to RAP behave predictably:
+   * a user who set a 15% policy expects RAB to follow the cost, while a user
+   * who typed a negotiated RAB expects that figure to stand and the
+   * percentage to re-report itself.
+   *
+   * A ref rather than state: it steers the next keystroke and must never
+   * trigger a render of its own.
    */
-  const applyMarkup = () => {
-    const rap = getValues('priceRap');
-    const markup = getValues('markupPercent');
+  const mode = useRef<'markup' | 'rab'>(defaultMarkupPercent ? 'markup' : 'rab');
 
-    const rapText = String(rap ?? '').trim();
-    const markupText = String(markup ?? '').trim();
+  const numeric = (raw: unknown): string | null => {
+    const text = String(raw ?? '').trim();
+    if (text === '') return null;
+    const value = Number(text);
+    return Number.isFinite(value) ? text : null;
+  };
 
-    if (rapText === '' || markupText === '') {
-      toast.error('Isi harga RAP dan persentase markup terlebih dahulu.');
-      return;
-    }
-
-    const rapValue = Number(rapText);
-    const markupValue = Number(markupText);
-
-    if (!Number.isFinite(rapValue) || !Number.isFinite(markupValue)) {
-      toast.error('Harga RAP dan markup harus berupa angka.');
-      return;
-    }
-
-    const derived = toDecimal(rapText)
+  /** RAB from RAP and the markup. */
+  const deriveRab = (rapText: string, markupText: string): string =>
+    toDecimal(rapText)
       .times(toDecimal(1).plus(toDecimal(markupText).dividedBy(100)))
-      .toDecimalPlaces(2);
+      .toDecimalPlaces(2)
+      .toString();
 
-    setValue('priceRab', derived.toString(), { shouldValidate: true });
-    toast.success(`Harga RAB dihitung dari RAP + ${markupText}%.`);
+  /**
+   * Markup implied by a RAP and a RAB.
+   *
+   * Null when RAP is zero or absent: there is no percentage that turns nothing
+   * into something, and writing Infinity into the field would be worse than
+   * leaving the old number alone.
+   */
+  const deriveMarkup = (rapText: string, rabText: string): string | null => {
+    const rap = toDecimal(rapText);
+    if (rap.isZero()) return null;
+    return toDecimal(rabText).dividedBy(rap).minus(1).times(100).toDecimalPlaces(2).toString();
+  };
+
+  const onMarkupChange = (raw: string) => {
+    mode.current = 'markup';
+    const rap = numeric(getValues('priceRap'));
+    const markup = numeric(raw);
+    if (rap === null || markup === null) return;
+    setValue('priceRab', deriveRab(rap, markup), { shouldValidate: false });
+  };
+
+  const onRabChange = (raw: string) => {
+    mode.current = 'rab';
+    const rap = numeric(getValues('priceRap'));
+    const rab = numeric(raw);
+    if (rap === null || rab === null) return;
+    const markup = deriveMarkup(rap, rab);
+    if (markup !== null) setValue('markupPercent', markup, { shouldValidate: false });
+  };
+
+  /**
+   * RAP is authoritative and never rewritten by the other two.
+   *
+   * Changing it updates whichever field is currently the consequence, so the
+   * pair stays coherent without the cost figure ever moving on its own.
+   */
+  const onRapChange = (raw: string) => {
+    const rap = numeric(raw);
+    if (rap === null) return;
+
+    if (mode.current === 'markup') {
+      const markup = numeric(getValues('markupPercent'));
+      if (markup !== null) setValue('priceRab', deriveRab(rap, markup), { shouldValidate: false });
+      return;
+    }
+
+    const rab = numeric(getValues('priceRab'));
+    if (rab === null) return;
+    const markup = deriveMarkup(rap, rab);
+    if (markup !== null) setValue('markupPercent', markup, { shouldValidate: false });
   };
 
   const onValid = async (values: PricePairFormValues) => {
@@ -167,46 +214,63 @@ export function PriceDialog({
             </Alert>
           ) : null}
 
+          {/*
+            Three fields, two of them tied together. `registration` is spread
+            first so the field stays controlled by react-hook-form, then the
+            change handler runs after it — order matters, otherwise the form's
+            own onChange overwrites ours and the pair never updates.
+          */}
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField
               id="priceRap"
               label={`Harga RAP per ${unitCode} (Rp)`}
               inputMode="decimal"
-              hint="Biaya pelaksanaan. Tanpa pemisah ribuan, contoh: 48000."
+              hint="Biaya pelaksanaan. Angka ini tidak pernah diubah otomatis."
               error={messageOf('priceRap')}
-              registration={register('priceRap')}
+              registration={{
+                ...register('priceRap'),
+                onChange: async (event: React.ChangeEvent<HTMLInputElement>) => {
+                  await register('priceRap').onChange(event);
+                  onRapChange(event.target.value);
+                },
+              }}
             />
             <TextField
               id="priceRab"
               label={`Harga RAB per ${unitCode} (Rp)`}
               inputMode="decimal"
-              hint="Anggaran biaya. Dapat diisi sendiri atau dihitung dari markup."
+              hint="Ketik sendiri untuk menghitung ulang markup-nya."
               error={messageOf('priceRab')}
-              registration={register('priceRab')}
+              registration={{
+                ...register('priceRab'),
+                onChange: async (event: React.ChangeEvent<HTMLInputElement>) => {
+                  await register('priceRab').onChange(event);
+                  onRabChange(event.target.value);
+                },
+              }}
             />
           </div>
 
           <div className="rounded-md border p-3">
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="flex-1 min-w-40">
-                <TextField
-                  id="markupPercent"
-                  label="Markup RAB atas RAP (%)"
-                  inputMode="decimal"
-                  hint="Disimpan dan terisi otomatis lain kali. Kosongkan bila kedua harga berdiri sendiri."
-                  error={messageOf('markupPercent')}
-                  registration={register('markupPercent')}
-                />
-              </div>
-              <Button type="button" variant="outline" onClick={applyMarkup}>
-                <Wand2 className="size-4" aria-hidden />
-                Hitung RAB
-              </Button>
-            </div>
+            <TextField
+              id="markupPercent"
+              label="Markup RAB atas RAP (%)"
+              inputMode="decimal"
+              hint="Mengetik di sini menghitung ulang harga RAB. Kosongkan bila kedua harga berdiri sendiri."
+              error={messageOf('markupPercent')}
+              registration={{
+                ...register('markupPercent'),
+                onChange: async (event: React.ChangeEvent<HTMLInputElement>) => {
+                  await register('markupPercent').onChange(event);
+                  onMarkupChange(event.target.value);
+                },
+              }}
+            />
             <p className="mt-2 text-xs text-muted-foreground">
-              Markup hanya mengisikan angkanya ke kolom RAB saat tombol ditekan. Harga yang
-              tersimpan tetap angka yang tertulis di atas, bukan rumus — revisi markup di kemudian
-              hari tidak mengubah harga yang sudah berlaku.
+              Markup dan harga RAB adalah dua sisi hubungan yang sama, jadi mengubah salah satunya
+              menghitung ulang yang lain. Harga RAP tidak pernah ikut berubah. Yang tersimpan
+              adalah angka yang tertulis di kolom, bukan rumusnya — merevisi markup di kemudian
+              hari tidak menggeser harga yang sudah berlaku.
             </p>
           </div>
 

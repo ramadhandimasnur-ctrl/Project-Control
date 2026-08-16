@@ -1,7 +1,6 @@
 import { notFound } from 'next/navigation';
 
 import { Badge } from '@/components/ui/badge';
-import { PhotoStashProvider } from '@/features/progress/photo-stash';
 import { ProjectSidebar } from '@/features/projects/project-sidebar';
 import { PROJECT_ROLE_LABELS } from '@/lib/auth/roles';
 import { isAppError } from '@/lib/errors';
@@ -45,7 +44,7 @@ export default async function ProjectLayout({
         opened. It must sit above the pages, not inside a dialog that unmounts.
       */}
       <main className="min-w-0 flex-1">
-        <PhotoStashProvider>{children}</PhotoStashProvider>
+        {children}
       </main>
     </div>
   );

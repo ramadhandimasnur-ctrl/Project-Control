@@ -199,7 +199,7 @@ export const DEMO_USERS: DemoUser[] = [
   {
     envEmailKey: 'SEED_ADMIN_EMAIL',
     fallbackEmail: 'admin@demo.test',
-    fullName: 'Andi Prasetyo',
+    fullName: 'Dimas Nur Ramadhan',
     globalRole: 'ADMIN',
     projectRole: 'PROJECT_MANAGER',
   },

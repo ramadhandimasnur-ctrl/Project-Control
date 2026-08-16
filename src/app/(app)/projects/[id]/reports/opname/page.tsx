@@ -15,11 +15,9 @@ import {
 } from '@/components/ui/table';
 import { PaperSettings } from '@/features/progress/paper-settings';
 import { PeriodPicker } from '@/features/progress/period-picker';
-import {
-  PhotoCount,
-  ReportPhotoPicker,
-  ReportPhotoPlates,
-} from '@/features/progress/report-photos';
+import { ReportDocuments } from '@/features/progress/report-documents';
+import { canRecordFieldData } from '@/lib/auth/roles';
+import { listPeriodDocuments } from '@/services/documents';
 import { ZERO, toDecimal } from '@/lib/calc/decimal';
 import { PROGRESS_STATUS_LABELS } from '@/lib/calc/progress';
 import { EMPTY_VALUE, formatDay, formatPercent, formatQuantity } from '@/lib/format';
@@ -65,6 +63,10 @@ export default async function OpnameReportPage({
   ]);
 
   const period = board.periods.find((p) => p.id === board.selectedPeriodId) ?? null;
+  const canRecord = canRecordFieldData(project.role);
+
+  // Loaded after the period is known, since documents are stored against it.
+  const documents = period === null ? [] : await listPeriodDocuments(user.id, projectId, period.id);
 
   if (board.periods.length === 0 || period === null) {
     return (
@@ -99,7 +101,6 @@ export default async function OpnameReportPage({
             periods={board.periods}
             selectedId={period.id}
           />
-          <PhotoCount periodId={period.id} workItemIds={workItems.map((w) => w.id)} />
         </div>
         <PaperSettings previewSelector="#opname-sheet" />
       </div>
@@ -223,11 +224,15 @@ export default async function OpnameReportPage({
         )}
       </section>
 
-      <ReportPhotoPicker periodId={period.id} />
-
       <section data-print="page-break" className="space-y-3">
         <h2 className="text-sm font-semibold">Lampiran dokumentasi</h2>
-        <ReportPhotoPlates periodId={period.id} workItems={workItems} />
+        <ReportDocuments
+          projectId={projectId}
+          periodId={period.id}
+          documents={documents}
+          workItems={workItems}
+          canEdit={canRecord}
+        />
       </section>
 
       <section data-print="keep-together" className="grid gap-8 pt-8 sm:grid-cols-3">

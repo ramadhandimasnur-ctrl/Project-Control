@@ -21,8 +21,7 @@ import { selectClassName } from '@/features/master-data/form-fields';
 import { CHECKLIST_ITEM_LABELS, CHECKLIST_LABELS } from '@/lib/validation/progress';
 
 import { saveChecklistAction } from './actions';
-import { PhotoField } from './photo-field';
-import { inspectionKey } from './photo-stash';
+import { DocumentUploader, type StoredDocument } from './document-uploader';
 
 type Result = 'PASS' | 'FAIL' | 'NA';
 
@@ -41,6 +40,7 @@ export function ChecklistDialog({
   periodId,
   label,
   current,
+  documents = [],
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -49,6 +49,8 @@ export function ChecklistDialog({
   periodId: string;
   label: string;
   current: { asDrawing: Result; position: Result; dimension: Result } | null;
+  /** Photographs already stored against this work item and period. */
+  documents?: StoredDocument[];
 }) {
   const router = useRouter();
   const [form, setForm] = useState({
@@ -116,7 +118,20 @@ export function ChecklistDialog({
             />
           </div>
 
-          <PhotoField stashKey={inspectionKey(workItemId, periodId)} />
+          {/*
+            Uploads as soon as a file is chosen, not on save. An inspection
+            photograph is evidence of what the site looked like at that moment;
+            holding it hostage to a form submit means a dialog closed by
+            accident loses it, and the moment does not come back.
+          */}
+          <DocumentUploader
+            projectId={projectId}
+            periodId={periodId}
+            workItemId={workItemId}
+            documents={documents}
+            label="Foto dokumentasi lapangan"
+            hint="Dikecilkan otomatis lalu disimpan permanen di server. Muncul sendiri pada laporan periode ini."
+          />
 
           <div
             className={

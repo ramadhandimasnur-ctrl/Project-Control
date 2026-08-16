@@ -11,6 +11,7 @@ import { ProgressBoardView } from '@/features/progress/progress-board';
 import { canRecordFieldData } from '@/lib/auth/roles';
 import { formatPercent } from '@/lib/format';
 import { PROGRESS_STATUS_LABELS } from '@/lib/calc/progress';
+import { listPeriodDocuments } from '@/services/documents';
 import { getProgressBoard, getProgressComparison } from '@/services/progress';
 import { getProject } from '@/services/projects';
 import { requireSessionUser } from '@/services/session';
@@ -41,6 +42,12 @@ export default async function ProgressPage({
     getProgressBoard(user.id, projectId, query.period),
     getProgressComparison(user.id, projectId),
   ]);
+
+  // Loaded once for the whole board; the checklist dialog filters to its row.
+  const documents =
+    board.selectedPeriodId === null
+      ? []
+      : await listPeriodDocuments(user.id, projectId, board.selectedPeriodId);
 
   return (
     <div className="space-y-6 p-6">
@@ -109,7 +116,12 @@ export default async function ProgressPage({
           ) : null}
 
           <Suspense fallback={<p className="text-sm text-muted-foreground">Memuat papan…</p>}>
-            <ProgressBoardView projectId={projectId} board={board} canRecord={canRecord} />
+            <ProgressBoardView
+              projectId={projectId}
+              board={board}
+              canRecord={canRecord}
+              documents={documents}
+            />
           </Suspense>
         </>
       )}

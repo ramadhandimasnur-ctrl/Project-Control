@@ -403,6 +403,120 @@ describe.skipIf(!ready)('Progres lapangan', () => {
     });
   });
 
+  /**
+   * Sending approved work back.
+   *
+   * The figure has already moved the curve, so withdrawing it has to move the
+   * curve back — otherwise a supervisor who approved the wrong number can only
+   * fix it by inventing a compensating entry in a later period, which leaves
+   * both periods wrong.
+   */
+  describe('menolak progres yang sudah disetujui', () => {
+    const approved = async (workItemId: string, periodId: string, pct: string) => {
+      await report(workItemId, periodId, { pctThisPeriod: pct });
+      const entries = await progress.listEntriesForPeriod(managerId, projectId, periodId);
+      const entry = entries.find((e) => e.workItemId === workItemId)!;
+      await progress.submitProgressEntry(field, projectId, entry.id);
+      await progress.approveProgressEntry(manager, projectId, entry.id);
+      return entry;
+    };
+
+    it('menurunkan kembali realisasi kumulatif dan kurva-S', async () => {
+      const [p1] = await buildPlan();
+      const entry = await approved(itemA, p1!, '0.8');
+
+      const before = await progress.getProgressComparison(managerId, projectId);
+      // Item A berbobot 0,25 → 0,8 × 0,25 = 0,2.
+      expect(Number(before.current.actualCumulative)).toBeCloseTo(0.2, 9);
+
+      await progress.rejectProgressEntry(manager, projectId, entry.id, 'volume keliru');
+
+      const after = await progress.getProgressComparison(managerId, projectId);
+      expect(Number(after.current.actualCumulative)).toBeCloseTo(0, 9);
+      expect(after.hasActual).toBe(false);
+      expect(Number(after.points[0]?.actualCumulative)).toBeCloseTo(0, 9);
+    });
+
+    /*
+     * The whole reason for allowing this: correct the figure and send it back
+     * through the same approval it came from.
+     */
+    it('membuka catatan untuk diperbaiki lalu diajukan ulang', async () => {
+      const [p1] = await buildPlan();
+      const entry = await approved(itemA, p1!, '0.8');
+      await progress.rejectProgressEntry(manager, projectId, entry.id, 'volume keliru');
+
+      await report(itemA, p1!, { pctThisPeriod: '0.5' });
+      const corrected = (await progress.listEntriesForPeriod(managerId, projectId, p1!)).find(
+        (e) => e.workItemId === itemA,
+      )!;
+      expect(corrected.status).toBe('DRAFT');
+
+      await progress.submitProgressEntry(field, projectId, corrected.id);
+      await progress.approveProgressEntry(manager, projectId, corrected.id);
+
+      const comparison = await progress.getProgressComparison(managerId, projectId);
+      expect(Number(comparison.current.actualCumulative)).toBeCloseTo(0.125, 9);
+    });
+
+    /*
+     * A row that says it was approved by someone who has since taken that back
+     * is a lie the audit trail would carry forward.
+     */
+    it('menghapus jejak persetujuannya', async () => {
+      const [p1] = await buildPlan();
+      const entry = await approved(itemA, p1!, '0.5');
+      await progress.rejectProgressEntry(manager, projectId, entry.id, 'salah periode');
+
+      const [row] = await sql<
+        { status: string; approved_by: string | null; approved_at: string | null }[]
+      >`SELECT status, approved_by, approved_at FROM progress_entries WHERE id = ${entry.id}`;
+
+      expect(row?.status).toBe('REJECTED');
+      expect(row?.approved_by).toBeNull();
+      expect(row?.approved_at).toBeNull();
+    });
+
+    it('mengembalikan kuota pekerjaan yang sempat terpakai', async () => {
+      const [p1] = await buildPlan();
+      const entry = await approved(itemA, p1!, '1');
+      await progress.rejectProgressEntry(manager, projectId, entry.id, 'batal');
+
+      const board = await progress.getProgressBoard(managerId, projectId, p1!);
+      expect(Number(board.rows.find((r) => r.code === 'A.01')?.remaining)).toBeCloseTo(1, 9);
+    });
+
+    it('tetap menolak peran yang tidak berwenang', async () => {
+      const [p1] = await buildPlan();
+      const entry = await approved(itemA, p1!, '0.5');
+
+      await expect(
+        progress.rejectProgressEntry(field, projectId, entry.id, 'coba'),
+      ).rejects.toThrow(/tidak berwenang/i);
+    });
+
+    it('tetap menuntut alasan penolakan', async () => {
+      const [p1] = await buildPlan();
+      const entry = await approved(itemA, p1!, '0.5');
+
+      await expect(
+        progress.rejectProgressEntry(manager, projectId, entry.id, '   '),
+      ).rejects.toThrow(/alasan penolakan wajib/i);
+    });
+
+    it('menolak penolakan atas catatan draf', async () => {
+      const [p1] = await buildPlan();
+      await report(itemA, p1!, { pctThisPeriod: '0.5' });
+      const entry = (await progress.listEntriesForPeriod(managerId, projectId, p1!)).find(
+        (e) => e.workItemId === itemA,
+      )!;
+
+      await expect(
+        progress.rejectProgressEntry(manager, projectId, entry.id, 'coba'),
+      ).rejects.toThrow(/diajukan atau sudah disetujui/i);
+    });
+  });
+
   describe('alur persetujuan', () => {
     it('draf → diajukan → disetujui', async () => {
       const [p1] = await buildPlan();

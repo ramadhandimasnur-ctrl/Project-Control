@@ -59,6 +59,7 @@ import {
   submitProgressAction,
 } from './actions';
 import { ChecklistDialog } from './checklist-dialog';
+import { type StoredDocument } from './document-uploader';
 import { MilestoneDialog } from './milestone-dialog';
 import { ProgressDialog } from './progress-dialog';
 
@@ -91,10 +92,13 @@ export function ProgressBoardView({
   projectId,
   board,
   canRecord,
+  documents = [],
 }: {
   projectId: string;
   board: ProgressBoard;
   canRecord: boolean;
+  /** Photographs stored against the selected period. */
+  documents?: StoredDocument[];
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -474,19 +478,29 @@ export function ProgressBoardView({
                         </AlertDialog>
                       ) : null}
 
-                      {board.canApprove && row.entryId && row.status === 'SUBMITTED' ? (
+                      {/*
+                        Approved rows keep the reject control. Sending one back
+                        moves the realised curve down again, which is the point:
+                        the alternative is a fictional entry in a later period
+                        to cancel out an earlier one, leaving both wrong.
+                      */}
+                      {board.canApprove &&
+                      row.entryId &&
+                      (row.status === 'SUBMITTED' || row.status === 'APPROVED') ? (
                         <>
-                          <Button
-                            size="sm"
-                            disabled={busy}
-                            onClick={() =>
-                              run(row.workItemId, () =>
-                                approveProgressAction(projectId, row.entryId!),
-                              )
-                            }
-                          >
-                            Setujui
-                          </Button>
+                          {row.status === 'SUBMITTED' ? (
+                            <Button
+                              size="sm"
+                              disabled={busy}
+                              onClick={() =>
+                                run(row.workItemId, () =>
+                                  approveProgressAction(projectId, row.entryId!),
+                                )
+                              }
+                            >
+                              Setujui
+                            </Button>
+                          ) : null}
 
                           <AlertDialog>
                             <AlertDialogTrigger
@@ -507,8 +521,11 @@ export function ProgressBoardView({
                                 <AlertDialogTitle>Tolak progres {row.code}?</AlertDialogTitle>
                                 <AlertDialogDescription render={<div />}>
                                   <p>
-                                    Catatannya kembali menjadi draf agar dapat diperbaiki, bukan
+                                    Catatannya kembali dapat diperbaiki dan diajukan ulang, bukan
                                     dihapus.
+                                    {row.status === 'APPROVED'
+                                      ? ' Karena progres ini sudah disetujui, menolaknya juga menurunkan kembali realisasi kumulatif dan kurva-S. Laporan yang sudah terbit tetap membawa angka lamanya.'
+                                      : ''}
                                   </p>
                                   <div className="mt-3 space-y-1.5">
                                     <Label htmlFor="reject-reason">Alasan penolakan</Label>
@@ -629,6 +646,7 @@ export function ProgressBoardView({
           periodId={period.id}
           label={`${checking.code} · ${period.label}`}
           current={checking.checklist}
+          documents={documents.filter((doc) => doc.workItemId === checking.workItemId)}
         />
       ) : null}
     </div>

@@ -16,7 +16,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { PaperSettings } from '@/features/progress/paper-settings';
-import { ReportPhotoPicker, ReportPhotoPlates } from '@/features/progress/report-photos';
+import { ReportDocuments } from '@/features/progress/report-documents';
+import { canRecordFieldData } from '@/lib/auth/roles';
+import { listPeriodDocuments } from '@/services/documents';
+import { getProject } from '@/services/projects';
 import { SCurveChart } from '@/features/schedule/scurve-chart';
 import { ZERO, toDecimal } from '@/lib/calc/decimal';
 import { PROGRESS_STATUS_LABELS } from '@/lib/calc/progress';
@@ -80,6 +83,19 @@ export default async function SnapshotPage({
     .filter((item): item is typeof item & { workItemId: string } => item.workItemId !== undefined)
     .map((item) => ({ id: item.workItemId, code: item.code, name: item.name }));
 
+  /*
+   * Photographs are read live rather than from the frozen payload, and that is
+   * deliberate: they are evidence attached to a period, not a figure quoted at
+   * a moment. Adding one after publishing enriches the report; it cannot alter
+   * what the report claims, because every number on the page still comes from
+   * the snapshot.
+   */
+  const [project, documents] = await Promise.all([
+    getProject(user.id, projectId),
+    listPeriodDocuments(user.id, projectId, payload.period.id),
+  ]);
+  const canRecord = canRecordFieldData(project.role);
+
   return (
     <div className="p-6">
       <div data-print="hide" className="mb-6 space-y-3">
@@ -102,9 +118,9 @@ export default async function SnapshotPage({
               tidak mengubah isinya — untuk angka terkini, buka halaman Dashboard atau Kurva-S.
             </p>
             <p className="mt-2">
-              Kecuali fotonya. Foto tidak tersimpan di server sama sekali; ia hidup di peramban ini
-              saja. Lampirkan lalu cetak dalam satu duduk — memuat ulang halaman, membukanya besok,
-              atau membukanya dari komputer lain akan menampilkan angka yang sama tanpa foto.
+              Foto tersimpan permanen di server dan dibaca langsung, bukan dari salinan beku.
+              Menambah foto setelah laporan terbit memperkaya lampirannya tanpa mengubah satu pun
+              angka di atas — angkanya tetap berasal dari saat penerbitan.
             </p>
           </AlertDescription>
         </Alert>
@@ -321,11 +337,15 @@ export default async function SnapshotPage({
           on another machine, shows the same figures and no photographs. The
           notice below says so rather than leaving the reader to discover it.
         */}
-        <ReportPhotoPicker periodId={payload.period.id} />
-
         <section data-print="page-break" className="space-y-3">
           <h2 className="text-sm font-semibold">Lampiran dokumentasi</h2>
-          <ReportPhotoPlates periodId={payload.period.id} workItems={photoWorkItems} />
+          <ReportDocuments
+            projectId={projectId}
+            periodId={payload.period.id}
+            documents={documents}
+            workItems={photoWorkItems}
+            canEdit={canRecord}
+          />
         </section>
 
         <section className="space-y-2">

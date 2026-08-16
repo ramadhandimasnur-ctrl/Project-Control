@@ -184,8 +184,10 @@ BEGIN
         'EXISTS (SELECT 1 FROM public.work_items w WHERE w.id = work_item_id AND pc_can_access_project(w.project_id))', true),
       ('baseline_distributions',
         'EXISTS (SELECT 1 FROM public.schedule_baselines b WHERE b.id = baseline_id AND pc_can_access_project(b.project_id))', true),
-      ('progress_documents',
-        'EXISTS (SELECT 1 FROM public.progress_entries e WHERE e.id = progress_entry_id AND pc_can_access_project(e.project_id))', true),
+      -- Reached directly now that a photograph need not hang off a progress
+      -- entry. The old predicate went through progress_entries, and with that
+      -- column nullable it would have let every entry-less row through.
+      ('progress_documents',          'pc_can_access_project(project_id)',            true),
       ('purchase_items',
         'EXISTS (SELECT 1 FROM public.purchases p WHERE p.id = purchase_id AND pc_can_access_project(p.project_id))', true),
       ('subcontract_items',

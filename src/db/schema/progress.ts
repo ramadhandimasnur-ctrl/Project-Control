@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   check,
   index,
+  integer,
   pgTable,
   text,
   timestamp,
@@ -63,22 +64,49 @@ export const progressEntries = pgTable(
   ],
 );
 
+/**
+ * Site photographs, stored for good.
+ *
+ * Attached to a period, and optionally to a work item within it — the same two
+ * keys the field screens already use. Deliberately *not* hung off a progress
+ * entry: a photograph is often taken before anyone records a figure, and a
+ * report's general documentation belongs to no work item at all. Requiring an
+ * entry first would mean the picture had nowhere to live at the moment it was
+ * taken.
+ *
+ * `storagePath` points into the private bucket; nothing here is a URL, because
+ * a URL that works forever is exactly what a private bucket exists to avoid.
+ */
 export const progressDocuments = pgTable(
   'progress_documents',
   {
     id: primaryId(),
-    progressEntryId: uuid('progress_entry_id')
+    projectId: uuid('project_id')
       .notNull()
-      .references(() => progressEntries.id, { onDelete: 'cascade' }),
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    periodId: uuid('period_id')
+      .notNull()
+      .references(() => schedulePeriods.id, { onDelete: 'cascade' }),
+    /** Null for documentation that belongs to the report as a whole. */
+    workItemId: uuid('work_item_id').references(() => workItems.id, { onDelete: 'cascade' }),
+    progressEntryId: uuid('progress_entry_id').references(() => progressEntries.id, {
+      onDelete: 'set null',
+    }),
     storagePath: text('storage_path').notNull(),
     caption: text('caption'),
+    /** Bytes after the browser compressed it, for showing what was stored. */
+    byteSize: integer('byte_size'),
     takenAt: timestamp('taken_at', { withTimezone: true, mode: 'date' }),
     uploadedBy: uuid('uploaded_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
   },
-  (t) => [index('progress_documents_entry_idx').on(t.progressEntryId)],
+  (t) => [
+    index('progress_documents_entry_idx').on(t.progressEntryId),
+    index('progress_documents_period_idx').on(t.periodId, t.workItemId),
+    uniqueIndex('progress_documents_path_unique').on(t.storagePath),
+  ],
 );
 
 /**
