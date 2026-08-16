@@ -62,6 +62,16 @@ export function DocumentUploader({
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  /*
+   * What the button says while it works.
+   *
+   * Compression happens in the browser and, on a phone photograph over a site
+   * connection, takes long enough to be mistaken for a hang. Labelling it
+   * "Mengunggah…" the whole time is not only vague, it is wrong for the first
+   * half — and a progress count is what tells someone dropping in eight photos
+   * that the eighth is coming.
+   */
+  const [phase, setPhase] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -72,11 +82,15 @@ export function DocumentUploader({
 
     setBusy(true);
     const supabase = createSupabaseBrowserClient();
+    const total = verdict.accepted.length;
     let stored = 0;
 
-    for (const original of verdict.accepted) {
+    for (const [index, original] of verdict.accepted.entries()) {
+      const counter = total === 1 ? '' : ` (${index + 1}/${total})`;
       try {
+        setPhase(`Mengecilkan${counter}…`);
         const { file, originalBytes, compressedBytes } = await compressPhoto(original);
+        setPhase(`Mengunggah${counter}…`);
         const extension = file.name.split('.').pop() ?? 'jpg';
 
         const target = await createUploadTargetAction(projectId, periodId, extension);
@@ -124,6 +138,7 @@ export function DocumentUploader({
     }
 
     setBusy(false);
+    setPhase(null);
     if (inputRef.current) inputRef.current.value = '';
     if (stored > 0) router.refresh();
   };
@@ -174,7 +189,7 @@ export function DocumentUploader({
               ) : (
                 <ImagePlus className="size-4" aria-hidden />
               )}
-              {busy ? 'Mengunggah…' : 'Tambah foto'}
+              {busy ? (phase ?? 'Memproses…') : 'Tambah foto'}
             </Button>
             <span className="text-xs text-muted-foreground">
               {documents.length} foto tersimpan

@@ -17,7 +17,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, ButtonLink } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -133,10 +133,17 @@ export function RevisionBoard({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">Revisi CCO</h2>
         <div className="flex items-center gap-2">
-          <Button variant="outline" render={<Link href={`/projects/${projectId}/cco/print`} />}>
+          {/*
+            `ButtonLink`, not a `Button` rendering a `Link`. Base UI's button
+            expects a native <button> and warns when handed an anchor, because
+            the two are not interchangeable: one submits forms and answers the
+            space bar, the other navigates and offers "open in new tab". This
+            is navigation, so it is an anchor that looks like a button.
+          */}
+          <ButtonLink href={`/projects/${projectId}/cco/print`} variant="outline">
             <Printer className="size-4" aria-hidden />
             Cetak laporan CCO
-          </Button>
+          </ButtonLink>
           {canDraft ? (
             <Button disabled={candidates.length === 0} onClick={() => setDrafting(true)}>
               <Plus className="size-4" aria-hidden />
