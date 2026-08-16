@@ -145,9 +145,7 @@ describe.skipIf(!ready)('Laporan terbit', () => {
       const [p1] = await periodIds();
       await approveProgress(p1!, '0.4');
 
-      const payload = await reports.buildReportPayload(userId, projectId, p1!, {
-        includeCosts: true,
-      });
+      const payload = await reports.buildReportPayload(userId, projectId, p1!, 'DAILY');
 
       expect(payload.project.code).toBe('LAP-1');
       expect(payload.period.id).toBe(p1);
@@ -156,14 +154,52 @@ describe.skipIf(!ready)('Laporan terbit', () => {
       expect(Number(payload.items[0]?.pctThisPeriod)).toBeCloseTo(0.4, 9);
     });
 
-    it('menghilangkan angka biaya bila diminta', async () => {
+    /*
+     * A published report travels with the invoice. RAP is the contractor's own
+     * execution budget, so printing it there hands the owner the cost structure
+     * and the margin on it. Asserted against the serialised payload rather than
+     * the typed shape, because the leak that matters is whatever ends up in the
+     * database and on paper.
+     */
+    it('tidak memuat satu pun angka biaya internal', async () => {
       const [p1] = await periodIds();
-      const payload = await reports.buildReportPayload(userId, projectId, p1!, {
-        includeCosts: false,
-      });
 
-      expect(payload.financial).toBeNull();
-      expect(payload.cash).toBeNull();
+      for (const type of ['DAILY', 'WEEKLY', 'MONTHLY'] as const) {
+        const payload = await reports.buildReportPayload(userId, projectId, p1!, type);
+        const serialised = JSON.stringify(payload);
+
+        for (const forbidden of [
+          'totalRap',
+          'actualCost',
+          'costVariance',
+          'marginProjected',
+          'cpi',
+          'inflow',
+          'outflow',
+        ]) {
+          expect(serialised, `${type} membocorkan ${forbidden}`).not.toContain(forbidden);
+        }
+      }
+    });
+
+    it('melampirkan kurva-S pada laporan mingguan dan bulanan', async () => {
+      const [p1, p2] = await periodIds();
+      await approveProgress(p1!, '0.4');
+
+      for (const type of ['WEEKLY', 'MONTHLY'] as const) {
+        const payload = await reports.buildReportPayload(userId, projectId, p2!, type);
+        expect(payload.curve, type).not.toBeNull();
+        // Sampai periode pelaporan saja, tidak sampai akhir proyek.
+        expect(payload.curve).toHaveLength(2);
+        expect(Number(payload.curve?.[0]?.actualCumulative)).toBeCloseTo(0.4, 9);
+      }
+    });
+
+    // One day of an S-curve is a dot; the shape only reads over weeks.
+    it('tidak melampirkan kurva-S pada laporan harian', async () => {
+      const [p1] = await periodIds();
+      const payload = await reports.buildReportPayload(userId, projectId, p1!, 'DAILY');
+      expect(payload.curve).toBeNull();
     });
 
     it('membawa kendala periode itu', async () => {
@@ -176,9 +212,7 @@ describe.skipIf(!ready)('Laporan terbit', () => {
         periodId: p1!,
       });
 
-      const payload = await reports.buildReportPayload(userId, projectId, p1!, {
-        includeCosts: false,
-      });
+      const payload = await reports.buildReportPayload(userId, projectId, p1!, 'WEEKLY');
 
       expect(payload.issues).toHaveLength(1);
       expect(payload.issues[0]).toMatchObject({ title: 'Hujan tiga hari', severity: 'HIGH' });
@@ -186,7 +220,7 @@ describe.skipIf(!ready)('Laporan terbit', () => {
 
     it('menolak periode milik proyek lain', async () => {
       await expect(
-        reports.buildReportPayload(userId, projectId, randomUUID(), { includeCosts: false }),
+        reports.buildReportPayload(userId, projectId, randomUUID(), 'DAILY'),
       ).rejects.toThrow(/tidak dikenal/);
     });
   });
@@ -213,9 +247,7 @@ describe.skipIf(!ready)('Laporan terbit', () => {
 
       await approveProgress(p2!, '0.3');
 
-      const live = await reports.buildReportPayload(userId, projectId, p2!, {
-        includeCosts: false,
-      });
+      const live = await reports.buildReportPayload(userId, projectId, p2!, 'WEEKLY');
       const reopened = await reports.getSnapshot(userId, projectId, published.id);
 
       // The live figure has moved…

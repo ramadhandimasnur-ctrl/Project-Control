@@ -12,7 +12,6 @@ import type { IssueSeverity, IssueStatus, ReportType } from '@/lib/reports/label
 
 import { assertProjectAccess } from './access';
 import { writeAuditLog } from './audit';
-import { getCashflow, getFinancialSummary } from './cash';
 import { getProgressBoard, getProgressComparison } from './progress';
 import { type SessionUser } from './session';
 
@@ -54,20 +53,20 @@ export type ReportPayload = {
     pctThisPeriod: string;
     status: string | null;
   }[];
-  financial: {
-    totalRab: string;
-    totalRap: string;
-    actualCost: string;
-    costVariance: string;
-    cpi: string | null;
-    marginProjected: string;
-  } | null;
-  cash: {
-    inflow: string;
-    outflow: string;
-    closing: string;
-    isDeficit: boolean;
-  } | null;
+  /**
+   * Planned against realised, period by period — weekly and monthly only.
+   *
+   * A daily sheet covers one day and a curve across it says nothing; the
+   * shape only becomes readable over weeks.
+   */
+  curve:
+    | {
+        label: string;
+        plannedCumulative: string;
+        actualCumulative: string;
+        deviation: string;
+      }[]
+    | null;
   issues: {
     title: string;
     description: string | null;
@@ -81,12 +80,18 @@ export type ReportPayload = {
  *
  * Feeds both the preview and the publish step, so what the user approves on
  * screen is exactly what gets frozen.
+ *
+ * No internal cost figure appears here — not RAP, not realised cost, not
+ * margin. A published report is what goes to the owner with the invoice, and
+ * RAP is the contractor's own execution budget: printing it hands over the
+ * cost structure and the margin on it. Those figures live on the Dashboard and
+ * Kebutuhan Modal, which are closed to roles that must not see costs.
  */
 export async function buildReportPayload(
   userId: string,
   projectId: string,
   periodId: string,
-  options: { includeCosts: boolean },
+  reportType: ReportType,
 ): Promise<ReportPayload> {
   await assertProjectAccess(userId, projectId, 'VIEWER');
 
@@ -125,30 +130,22 @@ export async function buildReportPayload(
 
   const atPeriod = comparison.points.find((point) => point.periodId === periodId) ?? null;
 
-  const financial = options.includeCosts
-    ? await getFinancialSummary(userId, projectId).then((summary) => ({
-        totalRab: summary.totalRab,
-        totalRap: summary.totalRap,
-        actualCost: summary.actualCost,
-        costVariance: summary.variance.costVariance,
-        cpi: summary.variance.cpi,
-        marginProjected: summary.margin.projected,
-      }))
-    : null;
-
-  const cash = options.includeCosts
-    ? await getCashflow(userId, projectId).then((view) => {
-        const point = view.flow.find((row) => row.periodId === periodId);
-        return point
-          ? {
-              inflow: point.inflow,
-              outflow: point.outflow,
-              closing: point.closing,
-              isDeficit: point.isDeficit,
-            }
-          : null;
-      })
-    : null;
+  /*
+   * The curve runs up to the reporting period and stops. Drawing the plan for
+   * months that have not happened yet next to an empty realised line makes a
+   * project look catastrophically behind on the day it is issued.
+   */
+  const curve =
+    reportType === 'DAILY'
+      ? null
+      : comparison.points
+          .filter((point) => point.seq <= period.seq)
+          .map((point) => ({
+            label: point.label,
+            plannedCumulative: point.plannedCumulative.toString(),
+            actualCumulative: point.actualCumulative.toString(),
+            deviation: point.deviation.toString(),
+          }));
 
   return {
     version: 1,
@@ -173,8 +170,7 @@ export async function buildReportPayload(
         pctThisPeriod: row.pctThisPeriod,
         status: row.status,
       })),
-    financial,
-    cash,
+    curve,
     issues: periodIssues.map((issue) => ({
       title: issue.title,
       description: issue.description,
@@ -260,9 +256,7 @@ export async function publishReport(
 ): Promise<{ id: string }> {
   const access = await assertProjectAccess(user.id, projectId, 'ENGINEER');
 
-  const payload = await buildReportPayload(user.id, projectId, periodId, {
-    includeCosts: true,
-  });
+  const payload = await buildReportPayload(user.id, projectId, periodId, reportType);
 
   return withUser(user.id, async (tx) => {
     const [created] = await tx

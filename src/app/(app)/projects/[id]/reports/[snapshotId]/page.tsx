@@ -15,9 +15,16 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { PaperSettings } from '@/features/progress/paper-settings';
+import { SCurveChart } from '@/features/schedule/scurve-chart';
 import { PROGRESS_STATUS_LABELS } from '@/lib/calc/progress';
 import { isAppError } from '@/lib/errors';
-import { EMPTY_VALUE, formatCurrency, formatDateTime, formatDay, formatPercent, formatRatio } from '@/lib/format';
+import {
+  EMPTY_VALUE,
+  formatDateTime,
+  formatDay,
+  formatPercent,
+  formatRatio,
+} from '@/lib/format';
 import {
   ISSUE_SEVERITY_LABELS,
   ISSUE_STATUS_LABELS,
@@ -169,42 +176,57 @@ export default async function SnapshotPage({
           )}
         </section>
 
-        {payload.financial ? (
-          <section data-print="keep-together" className="space-y-2">
-            <h2 className="text-sm font-semibold">Keuangan</h2>
-            <dl className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-              <Figure label="RAB" value={formatCurrency(payload.financial.totalRab)} />
-              <Figure label="RAP" value={formatCurrency(payload.financial.totalRap)} />
-              <Figure label="Realisasi" value={formatCurrency(payload.financial.actualCost)} />
-              <Figure label="Varians" value={formatCurrency(payload.financial.costVariance)} />
-              <Figure
-                label="CPI"
-                value={
-                  payload.financial.cpi === null
-                    ? EMPTY_VALUE
-                    : formatRatio(payload.financial.cpi)
-                }
-              />
-              <Figure
-                label="Margin proyeksi"
-                value={formatCurrency(payload.financial.marginProjected)}
-              />
-            </dl>
-          </section>
-        ) : null}
+        {payload.curve ? (
+          <section data-print="page-break" className="space-y-2">
+            <h2 className="text-sm font-semibold">Kurva-S rencana dan realisasi</h2>
+            <SCurveChart
+              curve={payload.curve.map((point, index) => ({
+                periodId: String(index),
+                seq: index + 1,
+                label: point.label,
+                // The per-period share, recovered from the running totals the
+                // snapshot froze.
+                plannedPct: String(
+                  Number(point.plannedCumulative) -
+                    Number(payload.curve?.[index - 1]?.plannedCumulative ?? 0),
+                ),
+                cumulativePct: point.plannedCumulative,
+                actualCumulative: point.actualCumulative,
+              }))}
+            />
 
-        {payload.cash ? (
-          <section data-print="keep-together" className="space-y-2">
-            <h2 className="text-sm font-semibold">Arus kas periode</h2>
-            <dl className="grid gap-3 sm:grid-cols-3">
-              <Figure label="Masuk" value={formatCurrency(payload.cash.inflow)} />
-              <Figure label="Keluar" value={formatCurrency(payload.cash.outflow)} />
-              <Figure
-                label="Saldo akhir"
-                value={formatCurrency(payload.cash.closing)}
-                caption={payload.cash.isDeficit ? 'Defisit' : undefined}
-              />
-            </dl>
+            <div className="overflow-x-auto rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Periode</TableHead>
+                    <TableHead className="w-32 text-right">Rencana</TableHead>
+                    <TableHead className="w-32 text-right">Realisasi</TableHead>
+                    <TableHead className="w-32 text-right">Deviasi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {payload.curve.map((point) => (
+                    <TableRow key={point.label} data-print="keep-together">
+                      <TableCell>{point.label}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
+                        {formatPercent(point.plannedCumulative, 2)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-medium tabular-nums">
+                        {formatPercent(point.actualCumulative, 2)}
+                      </TableCell>
+                      <TableCell
+                        className={`text-right font-mono tabular-nums ${
+                          Number(point.deviation) < 0 ? 'text-destructive' : 'text-primary'
+                        }`}
+                      >
+                        {formatPercent(point.deviation, 2)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </section>
         ) : null}
 
