@@ -127,34 +127,105 @@ test('panel pengguna terbuka bagi administrator', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+/**
+ * The first catalogue row that already carries an execution price.
+ *
+ * Deliberately not simply the first row. The catalogue also holds items with
+ * no price at all, and those prove nothing about prefilling or binding — a
+ * field is empty there because there is nothing to fill it with. Returns null
+ * when the catalogue has no priced row, which the callers turn into a skip
+ * rather than a false pass.
+ */
+async function findPricedRow(page: Page) {
+  const rows = page.locator('tbody tr');
+  const total = await rows.count();
+
+  for (let index = 0; index < total; index += 1) {
+    const row = rows.nth(index);
+    const rap = row.getByLabel(/^Harga RAP /);
+    if ((await rap.count()) === 0) continue;
+    if ((await rap.inputValue()).trim() !== '') return row;
+  }
+
+  return null;
+}
+
 /*
- * The one interactive path worth asserting here: the price dialog is the only
- * place RAB and RAP are entered, and it now opens prefilled from what is
- * already stored. A prefill that silently stopped working would show an empty
- * RAB beside a filled RAP — which reads as "no budget price" for a resource
- * that has one, and would be saved back as exactly that.
+ * Prices are now typed straight into the catalogue row, and the three fields
+ * move together: a markup fills the budget price while the execution price
+ * stays put. The binding runs in the browser, so nothing in the service tests
+ * can catch it going wrong — a broken import or a stale handler would leave
+ * three inputs that simply ignore each other.
+ */
+test('markup yang diketik mengisi harga RAB di baris katalog', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/master-data/resources');
+
+  const row = await findPricedRow(page);
+  if (row === null) {
+    test.skip(true, 'tidak ada sumber daya berharga; jalankan npm run db:seed');
+    return;
+  }
+
+  const rap = row.getByLabel(/^Harga RAP /);
+  const rab = row.getByLabel(/^Harga RAB /);
+  const markup = row.getByLabel(/^Markup /);
+
+  const rapBefore = await rap.inputValue();
+  await markup.fill('10');
+
+  expect(Number(await rab.inputValue())).toBeCloseTo(Number(rapBefore) * 1.1, 2);
+  // The execution cost is authoritative and must survive the edit untouched.
+  await expect(rap).toHaveValue(rapBefore);
+
+  /*
+   * Saving is explicit, so the button appears only once something changed.
+   * Nothing is clicked here: the write path is covered by the service tests,
+   * and a smoke test should not rewrite the catalogue it is reading.
+   */
+  await expect(row.getByRole('button', { name: /^Simpan harga /i })).toBeVisible();
+});
+
+/*
+ * The same three fields on the work-item form, for lump-sum lines that carry a
+ * price and no analysis worth writing. Worth its own assertion because the
+ * binding is wired differently here — react-hook-form owns the inputs — so it
+ * can break on this form while the catalogue keeps working.
+ */
+test('form pekerjaan menghitung harga RAB dari markup yang diketik', async ({ page }) => {
+  await signIn(page);
+  const id = await openFirstProject(page);
+  await page.goto(`/projects/${id}/work-items`);
+
+  await page.getByRole('button', { name: 'Tambah pekerjaan' }).first().click();
+
+  const rap = page.getByLabel('Harga RAP', { exact: true });
+  await expect(rap).toBeVisible();
+
+  await rap.fill('100000');
+  await page.getByLabel('Markup (%)', { exact: true }).fill('20');
+
+  await expect(page.getByLabel('Harga RAB', { exact: true })).toHaveValue('120000');
+});
+
+/*
+ * The dialog on the resource detail page is still the way a price is recorded
+ * against a past date, and it opens prefilled from what is already stored. A
+ * prefill that silently stopped working would show an empty RAB beside a
+ * filled RAP — which reads as "no budget price" for a resource that has one,
+ * and would be saved back as exactly that.
  */
 test('dialog harga terisi dari harga yang berlaku', async ({ page }) => {
   await signIn(page);
   await page.goto('/master-data/resources');
 
-  /*
-   * Deliberately a resource that already has a price, not simply the first
-   * row. The catalogue also holds items with no price at all, and opening one
-   * of those proves nothing about prefilling — the field is empty because
-   * there is nothing to fill it with.
-   */
-  const pricedRow = page.locator('tbody tr').filter({ hasText: /Rp\s?\d/ }).first();
-
-  if ((await pricedRow.count()) === 0) {
+  const row = await findPricedRow(page);
+  if (row === null) {
     test.skip(true, 'tidak ada sumber daya berharga; jalankan npm run db:seed');
     return;
   }
 
-  const href = await pricedRow
-    .locator('a[href^="/master-data/resources/"]')
-    .first()
-    .getAttribute('href');
+  const href = await row.locator('a[href^="/master-data/resources/"]').first().getAttribute('href');
   expect(href).toBeTruthy();
 
   await page.goto(href!);
