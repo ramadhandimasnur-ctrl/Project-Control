@@ -115,6 +115,26 @@ test('setiap modul proyek terbuka tanpa error', async ({ page }) => {
 });
 
 /*
+ * The account menu, opened rather than merely rendered.
+ *
+ * Its contents only mount on click, so a component that throws while opening
+ * ships perfectly happily: the page loads, the walk above passes, and the
+ * failure waits for whoever clicks their own name. That is exactly how the
+ * missing `Menu.Group` context reached a running app.
+ */
+test('menu akun terbuka tanpa melempar error', async ({ page }) => {
+  await signIn(page);
+
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+
+  await page.getByRole('button', { name: /^Menu akun / }).click();
+
+  await expect(page.getByRole('menuitem', { name: /keluar/i })).toBeVisible();
+  expect(errors, 'membuka menu akun melempar error di peramban').toEqual([]);
+});
+
+/*
  * The seeded account is an organisation administrator, so this page must open.
  * A member reaching it gets the refusal notice instead, which the service
  * enforces rather than the route.

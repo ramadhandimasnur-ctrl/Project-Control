@@ -9,7 +9,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -36,7 +35,13 @@ export function UserMenu({
 
   return (
     <DropdownMenu>
+      {/*
+        The name is repeated in the label rather than replaced by it: on a
+        narrow screen the visible text is hidden and the button would otherwise
+        announce itself as nothing but its initials.
+      */}
       <DropdownMenuTrigger
+        aria-label={`Menu akun ${fullName}`}
         render={<Button variant="ghost" size="sm" className="gap-2" />}
       >
         <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-medium">
@@ -45,15 +50,27 @@ export function UserMenu({
         <span className="hidden max-w-40 truncate sm:inline">{fullName}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuLabel>
-          <span className="block truncate font-medium">{fullName}</span>
-          <span className="block truncate text-xs font-normal text-muted-foreground">{email}</span>
+        {/*
+          A plain header, not `DropdownMenuLabel`.
+
+          That component renders Base UI's `Menu.GroupLabel`, which reads its
+          group from context and throws when there is none — which is what this
+          menu did on every click, because there was no `Menu.Group` around it.
+          Wrapping one would have silenced the error while making a second,
+          quieter claim: a group label is announced as the name of the items
+          beneath it, so a screen reader would have introduced "Keluar" as
+          belonging to a group called "Dimas Nur Ramadhan". This block is a
+          heading that says who is signed in, so it is written as one.
+        */}
+        <div className="px-1.5 py-1">
+          <span className="block truncate text-sm font-medium">{fullName}</span>
+          <span className="block truncate text-xs text-muted-foreground">{email}</span>
           {globalRole === 'ADMIN' ? (
             <Badge variant="secondary" className="mt-2">
               Administrator organisasi
             </Badge>
           ) : null}
-        </DropdownMenuLabel>
+        </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           disabled={pending}
