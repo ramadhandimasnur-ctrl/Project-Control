@@ -464,6 +464,167 @@ describe.skipIf(!ready)('master data — jalur tulis', () => {
       expect(after.items[0]?.priceRap).toBe('52000.00');
     });
 
+    /**
+     * Both prices at once, and the markup that relates them.
+     */
+    describe('pasangan RAB dan RAP', () => {
+      it('menyimpan kedua harga pada satu tanggal berlaku', async () => {
+        const unitId = await makeUnit();
+        const resourceId = await makeResource(unitId);
+
+        await prices.setPricePair(admin, {
+          resourceId,
+          projectId: null,
+          priceRap: '48000.00',
+          priceRab: '55200.00',
+          markupPercent: '15',
+          effectiveFrom: '2026-03-01',
+        });
+
+        const { items } = await resources.listResources(adminId, { onDate: '2026-06-01' });
+        expect(items[0]?.priceRap).toBe('48000.00');
+        expect(items[0]?.priceRab).toBe('55200.00');
+      });
+
+      /*
+       * Blank means "leave that one alone", not "set it to zero". A price of
+       * nothing and no price at all are different statements, and the estimate
+       * treats them differently.
+       */
+      it('membiarkan harga yang dikosongkan apa adanya', async () => {
+        const unitId = await makeUnit();
+        const resourceId = await makeResource(unitId);
+
+        await prices.setPricePair(admin, {
+          resourceId,
+          projectId: null,
+          priceRap: '48000.00',
+          priceRab: '55200.00',
+          markupPercent: null,
+          effectiveFrom: '2026-03-01',
+        });
+
+        await prices.setPricePair(admin, {
+          resourceId,
+          projectId: null,
+          priceRap: '50000.00',
+          priceRab: null,
+          markupPercent: null,
+          effectiveFrom: '2026-03-01',
+        });
+
+        const { items } = await resources.listResources(adminId, { onDate: '2026-06-01' });
+        expect(items[0]?.priceRap).toBe('50000.00');
+        expect(items[0]?.priceRab).toBe('55200.00');
+      });
+
+      it('menolak bila kedua harga kosong', async () => {
+        const unitId = await makeUnit();
+        const resourceId = await makeResource(unitId);
+
+        await expect(
+          prices.setPricePair(admin, {
+            resourceId,
+            projectId: null,
+            priceRap: null,
+            priceRab: null,
+            markupPercent: '15',
+            effectiveFrom: '2026-03-01',
+          }),
+        ).rejects.toThrow(/setidaknya salah satu harga/i);
+      });
+
+      /*
+       * The markup is a remembered preference, stored as a fraction. It is not
+       * applied at read time: the price book records what was agreed on a
+       * date, and deriving RAB whenever it is read would rewrite last year's
+       * budget the moment someone revised the margin.
+       */
+      it('mengingat markup sebagai pecahan tanpa mengubah harga tersimpan', async () => {
+        const unitId = await makeUnit();
+        const resourceId = await makeResource(unitId);
+
+        await prices.setPricePair(admin, {
+          resourceId,
+          projectId: null,
+          priceRap: '48000.00',
+          priceRab: '55200.00',
+          markupPercent: '15',
+          effectiveFrom: '2026-03-01',
+        });
+
+        const [stored] = await sql<{ price_markup_percent: string }[]>`
+          SELECT price_markup_percent FROM resources WHERE id = ${resourceId}
+        `;
+        expect(Number(stored?.price_markup_percent)).toBeCloseTo(0.15, 9);
+
+        // Revising the markup alone must not move a price already in force.
+        await prices.setPricePair(admin, {
+          resourceId,
+          projectId: null,
+          priceRap: '48000.00',
+          priceRab: null,
+          markupPercent: '30',
+          effectiveFrom: '2026-03-01',
+        });
+
+        const { items } = await resources.listResources(adminId, { onDate: '2026-06-01' });
+        expect(items[0]?.priceRab).toBe('55200.00');
+      });
+
+      it('menghapus markup ketika dikosongkan', async () => {
+        const unitId = await makeUnit();
+        const resourceId = await makeResource(unitId);
+
+        await prices.setPricePair(admin, {
+          resourceId, projectId: null, priceRap: '10', priceRab: null,
+          markupPercent: '15', effectiveFrom: '2026-03-01',
+        });
+        await prices.setPricePair(admin, {
+          resourceId, projectId: null, priceRap: '10', priceRab: null,
+          markupPercent: null, effectiveFrom: '2026-03-01',
+        });
+
+        const [stored] = await sql<{ price_markup_percent: string | null }[]>`
+          SELECT price_markup_percent FROM resources WHERE id = ${resourceId}
+        `;
+        expect(stored?.price_markup_percent).toBeNull();
+      });
+
+      it('mengganti entri pada tanggal berlaku yang sama, bukan menumpuknya', async () => {
+        const unitId = await makeUnit();
+        const resourceId = await makeResource(unitId);
+
+        for (const price of ['48000.00', '52000.00']) {
+          await prices.setPricePair(admin, {
+            resourceId,
+            projectId: null,
+            priceRap: price,
+            priceRab: price,
+            markupPercent: null,
+            effectiveFrom: '2026-03-01',
+          });
+        }
+
+        const history = await prices.listPriceHistory(adminId, resourceId);
+        expect(history).toHaveLength(2); // one RAP, one RAB
+        expect(history.every((row) => row.price === '52000.00')).toBe(true);
+      });
+
+      it('menolak sumber daya milik organisasi lain', async () => {
+        await expect(
+          prices.setPricePair(admin, {
+            resourceId: randomUUID(),
+            projectId: null,
+            priceRap: '1000',
+            priceRab: null,
+            markupPercent: null,
+            effectiveFrom: '2026-03-01',
+          }),
+        ).rejects.toThrow(/tidak ditemukan/i);
+      });
+    });
+
     it('menolak sumber daya milik organisasi lain', async () => {
       await expect(
         prices.setPrice(admin, {

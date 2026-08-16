@@ -16,6 +16,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ResourceDetailActions } from '@/features/master-data/resource-detail-actions';
+import { toDecimal } from '@/lib/calc/decimal';
 import { isAppError } from '@/lib/errors';
 import { EMPTY_VALUE, formatCurrency, formatDay } from '@/lib/format';
 import { assertOrgAccess, canViewOrgCosts } from '@/services/org-access';
@@ -59,6 +60,23 @@ export default async function ResourceDetailPage({
   ]);
 
   const canManage = access.globalRole === 'ADMIN';
+
+  /*
+   * The prices in force, to prefill the dialog.
+   *
+   * History arrives newest-first, so the first row of each type is the one
+   * currently applying. Prefilling matters here: the dialog writes both prices
+   * together, and an empty RAB field next to a filled RAP would look like the
+   * resource has no budget price when it has one from an earlier date.
+   */
+  const currentRap = history.find((row) => row.priceType === 'RAP')?.price ?? null;
+  const currentRab = history.find((row) => row.priceType === 'RAB')?.price ?? null;
+
+  // Stored as a fraction, typed as a percentage.
+  const markupPercent =
+    resource.priceMarkupPercent === null
+      ? null
+      : toDecimal(resource.priceMarkupPercent).times(100).toString();
 
   const facts: { label: string; value: string }[] = [
     { label: 'Kode', value: resource.code },
@@ -109,6 +127,9 @@ export default async function ResourceDetailPage({
               usage={usage}
               canManage={canManage}
               canManagePrices={canManage && showCosts}
+              currentRap={currentRap}
+              currentRab={currentRab}
+              defaultMarkupPercent={markupPercent}
             />
           </>
         }

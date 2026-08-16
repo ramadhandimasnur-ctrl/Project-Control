@@ -42,6 +42,9 @@ export function ResourceDetailActions({
   usage,
   canManage,
   canManagePrices,
+  currentRap,
+  currentRab,
+  defaultMarkupPercent,
 }: {
   resourceId: string;
   resourceName: string;
@@ -53,6 +56,11 @@ export function ResourceDetailActions({
   usage: ResourceUsageSummary;
   canManage: boolean;
   canManagePrices: boolean;
+  /** Prices in force, so the dialog opens on what is already true. */
+  currentRap?: string | null;
+  currentRab?: string | null;
+  /** Markup remembered from the last save, as a percentage string. */
+  defaultMarkupPercent?: string | null;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -187,6 +195,9 @@ export function ResourceDetailActions({
           resourceId={resourceId}
           resourceName={resourceName}
           unitCode={unitCode}
+          currentRap={currentRap}
+          currentRab={currentRab}
+          defaultMarkupPercent={defaultMarkupPercent}
         />
       ) : null}
     </div>

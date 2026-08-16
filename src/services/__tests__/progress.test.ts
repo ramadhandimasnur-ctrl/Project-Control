@@ -284,6 +284,125 @@ describe.skipIf(!ready)('Progres lapangan', () => {
     });
   });
 
+  /**
+   * Withdrawal, as distinct from rejection.
+   *
+   * The rules that matter: a cancelled row stops counting, stays visible, and
+   * becomes editable again — and approved work can never be unwound this way.
+   */
+  describe('pembatalan', () => {
+    const entryFor = async (workItemId: string, periodId: string) => {
+      const entries = await progress.listEntriesForPeriod(managerId, projectId, periodId);
+      return entries.find((entry) => entry.workItemId === workItemId)!;
+    };
+
+    it('membatalkan draf dan menyisakan catatannya', async () => {
+      const [p1] = await buildPlan();
+      await report(itemA, p1!, { pctThisPeriod: '0.5' });
+      const entry = await entryFor(itemA, p1!);
+
+      await progress.cancelProgressEntry(field, projectId, entry.id, 'salah pekerjaan');
+
+      const [row] = await sql<{ status: string; reject_reason: string | null }[]>`
+        SELECT status, reject_reason FROM progress_entries WHERE id = ${entry.id}
+      `;
+      expect(row?.status).toBe('CANCELLED');
+      expect(row?.reject_reason).toBe('salah pekerjaan');
+    });
+
+    it('menarik pengajuan yang sedang menunggu keputusan', async () => {
+      const [p1] = await buildPlan();
+      await report(itemA, p1!, { pctThisPeriod: '0.5' });
+      const entry = await entryFor(itemA, p1!);
+      await progress.submitProgressEntry(field, projectId, entry.id);
+
+      await progress.cancelProgressEntry(field, projectId, entry.id);
+
+      const board = await progress.getProgressBoard(managerId, projectId, p1!);
+      expect(board.rows.find((row) => row.code === 'A.01')?.status).toBe('CANCELLED');
+      expect(board.pendingCount).toBe(0);
+    });
+
+    /*
+     * The whole point of cancelling rather than deleting: the figure can be
+     * corrected in place instead of re-entered from nothing.
+     */
+    it('membuka catatan yang dibatalkan untuk diperbaiki', async () => {
+      const [p1] = await buildPlan();
+      await report(itemA, p1!, { pctThisPeriod: '0.5' });
+      const entry = await entryFor(itemA, p1!);
+      await progress.cancelProgressEntry(field, projectId, entry.id);
+
+      await report(itemA, p1!, { pctThisPeriod: '0.3' });
+
+      const board = await progress.getProgressBoard(managerId, projectId, p1!);
+      const row = board.rows.find((r) => r.code === 'A.01');
+      expect(row?.status).toBe('DRAFT');
+      expect(Number(row?.pctThisPeriod)).toBeCloseTo(0.3, 9);
+    });
+
+    it('menolak penyuntingan catatan yang sedang diajukan', async () => {
+      const [p1] = await buildPlan();
+      await report(itemA, p1!, { pctThisPeriod: '0.5' });
+      const entry = await entryFor(itemA, p1!);
+      await progress.submitProgressEntry(field, projectId, entry.id);
+
+      await expect(report(itemA, p1!, { pctThisPeriod: '0.3' })).rejects.toThrow(
+        /sedang diajukan/i,
+      );
+    });
+
+    it('menolak pembatalan progres yang sudah disetujui', async () => {
+      const [p1] = await buildPlan();
+      await report(itemA, p1!, { pctThisPeriod: '0.5' });
+      const entry = await entryFor(itemA, p1!);
+      await progress.submitProgressEntry(field, projectId, entry.id);
+      await progress.approveProgressEntry(manager, projectId, entry.id);
+
+      await expect(
+        progress.cancelProgressEntry(field, projectId, entry.id),
+      ).rejects.toThrow(/sudah disetujui tidak dapat dibatalkan/i);
+    });
+
+    /*
+     * A withdrawn claim must not move the curve, and must give its quota back:
+     * cancelling 60% has to leave the full 100% available again.
+     */
+    it('tidak menghitung apa pun pada kurva dan mengembalikan sisanya', async () => {
+      const [p1, p2] = await buildPlan();
+      await report(itemA, p1!, { pctThisPeriod: '0.6' });
+      const entry = await entryFor(itemA, p1!);
+      await progress.submitProgressEntry(field, projectId, entry.id);
+      await progress.approveProgressEntry(manager, projectId, entry.id);
+
+      const before = await progress.getProgressComparison(managerId, projectId);
+      expect(Number(before.current.actualCumulative)).toBeCloseTo(0.15, 9);
+
+      // Cancelling an approved row is refused, so the realistic path is a
+      // second period's draft being withdrawn.
+      await report(itemA, p2!, { pctThisPeriod: '0.4' });
+      const second = await entryFor(itemA, p2!);
+      await progress.cancelProgressEntry(field, projectId, second.id);
+
+      const after = await progress.getProgressComparison(managerId, projectId);
+      expect(Number(after.current.actualCumulative)).toBeCloseTo(0.15, 9);
+
+      const board = await progress.getProgressBoard(managerId, projectId, p2!);
+      expect(Number(board.rows.find((r) => r.code === 'A.01')?.remaining)).toBeCloseTo(0.4, 9);
+    });
+
+    it('menolak pembatalan ganda', async () => {
+      const [p1] = await buildPlan();
+      await report(itemA, p1!, { pctThisPeriod: '0.5' });
+      const entry = await entryFor(itemA, p1!);
+      await progress.cancelProgressEntry(field, projectId, entry.id);
+
+      await expect(
+        progress.cancelProgressEntry(field, projectId, entry.id),
+      ).rejects.toThrow(/sudah dibatalkan/i);
+    });
+  });
+
   describe('alur persetujuan', () => {
     it('draf → diajukan → disetujui', async () => {
       const [p1] = await buildPlan();

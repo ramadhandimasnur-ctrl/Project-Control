@@ -16,6 +16,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { PaperSettings } from '@/features/progress/paper-settings';
+import { ReportPhotoPicker, ReportPhotoPlates } from '@/features/progress/report-photos';
 import { SCurveChart } from '@/features/schedule/scurve-chart';
 import { ZERO, toDecimal } from '@/lib/calc/decimal';
 import { PROGRESS_STATUS_LABELS } from '@/lib/calc/progress';
@@ -69,6 +70,16 @@ export default async function SnapshotPage({
   const itemTotals = sumItems(payload.items);
   const hasWeighted = payload.items.some((item) => item.weighted !== undefined);
 
+  /*
+   * Only items whose id was frozen with the report can carry photographs.
+   * Snapshots published before the id was recorded simply group none, rather
+   * than being matched by name — a name collision would file a photograph
+   * under the wrong work item, which on a printed report is a false claim.
+   */
+  const photoWorkItems = payload.items
+    .filter((item): item is typeof item & { workItemId: string } => item.workItemId !== undefined)
+    .map((item) => ({ id: item.workItemId, code: item.code, name: item.name }));
+
   return (
     <div className="p-6">
       <div data-print="hide" className="mb-6 space-y-3">
@@ -86,8 +97,15 @@ export default async function SnapshotPage({
           <Lock className="size-4" aria-hidden />
           <AlertTitle>Angka pada laporan ini dibekukan</AlertTitle>
           <AlertDescription>
-            Yang tampil adalah keadaan pada saat diterbitkan. Perubahan data setelah tanggal itu
-            tidak mengubah isinya — untuk angka terkini, buka halaman Dashboard atau Kurva-S.
+            <p>
+              Yang tampil adalah keadaan pada saat diterbitkan. Perubahan data setelah tanggal itu
+              tidak mengubah isinya — untuk angka terkini, buka halaman Dashboard atau Kurva-S.
+            </p>
+            <p className="mt-2">
+              Kecuali fotonya. Foto tidak tersimpan di server sama sekali; ia hidup di peramban ini
+              saja. Lampirkan lalu cetak dalam satu duduk — memuat ulang halaman, membukanya besok,
+              atau membukanya dari komputer lain akan menampilkan angka yang sama tanpa foto.
+            </p>
           </AlertDescription>
         </Alert>
 
@@ -290,6 +308,25 @@ export default async function SnapshotPage({
             </div>
           </section>
         ) : null}
+
+        {/*
+          The same photo mechanism as the opname sheet, on all three published
+          report types. Photographs attached during an inspection appear here
+          grouped under their work item without being picked again, and extra
+          ones can be added before printing.
+
+          They are not part of the frozen payload, and cannot be: nothing is
+          uploaded and nothing is stored — each photograph is an object URL
+          pointing at a file in this browser. So a report reopened tomorrow, or
+          on another machine, shows the same figures and no photographs. The
+          notice below says so rather than leaving the reader to discover it.
+        */}
+        <ReportPhotoPicker periodId={payload.period.id} />
+
+        <section data-print="page-break" className="space-y-3">
+          <h2 className="text-sm font-semibold">Lampiran dokumentasi</h2>
+          <ReportPhotoPlates periodId={payload.period.id} workItems={photoWorkItems} />
+        </section>
 
         <section className="space-y-2">
           <h2 className="text-sm font-semibold">Kendala lapangan</h2>

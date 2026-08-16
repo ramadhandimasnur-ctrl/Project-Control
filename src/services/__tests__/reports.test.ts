@@ -251,6 +251,25 @@ describe.skipIf(!ready)('Laporan terbit', () => {
       expect(weekly.items.length).toBeGreaterThanOrEqual(daily.items.length);
     });
 
+    /*
+     * The photo plates group by work item id. Matching by name instead would
+     * file a photograph under the wrong work item whenever two share a name —
+     * on a printed report handed to an owner, that is a false claim.
+     */
+    it('membawa id pekerjaan agar foto dapat dikelompokkan', async () => {
+      const [p1] = await periodIds();
+      await approveProgress(p1!, '0.4');
+
+      for (const type of ['DAILY', 'WEEKLY', 'MONTHLY'] as const) {
+        const payload = await reports.buildReportPayload(userId, projectId, p1!, type);
+        expect(payload.items.length).toBeGreaterThan(0);
+        expect(
+          payload.items.every((item) => typeof item.workItemId === 'string'),
+          `${type} kehilangan id pekerjaan`,
+        ).toBe(true);
+      }
+    });
+
     it('membawa kendala periode itu', async () => {
       const [p1] = await periodIds();
       await reports.saveIssue(user, projectId, null, {

@@ -45,6 +45,12 @@ export type ReportPayload = {
     fromBaseline: boolean;
   };
   items: {
+    /**
+     * Kept so the printable sheet can find the photographs taken against this
+     * work item. Optional because snapshots published before the photo plates
+     * existed do not carry it — those simply group nothing.
+     */
+    workItemId?: string;
     code: string;
     name: string;
     unitCode: string;
@@ -190,6 +196,7 @@ export async function buildReportPayload(
           : row.includeInProgressWeight || row.status !== null,
       )
       .map((row) => ({
+        workItemId: row.workItemId,
         code: row.code,
         name: row.name,
         unitCode: row.unitCode,

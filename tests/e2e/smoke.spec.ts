@@ -127,6 +127,33 @@ test('panel pengguna terbuka bagi administrator', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+/*
+ * The one interactive path worth asserting here: the price dialog is the only
+ * place RAB and RAP are entered, and it now opens prefilled from what is
+ * already stored. A prefill that silently stopped working would show an empty
+ * RAB beside a filled RAP — which reads as "no budget price" for a resource
+ * that has one, and would be saved back as exactly that.
+ */
+test('dialog harga terisi dari harga yang berlaku', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/master-data/resources');
+
+  const firstResource = page.locator('a[href^="/master-data/resources/"]').first();
+  const href = await firstResource.getAttribute('href');
+  expect(href, 'butuh minimal satu sumber daya; jalankan npm run db:seed').toBeTruthy();
+
+  await page.goto(href!);
+  await page.getByRole('button', { name: /tambah harga|harga/i }).first().click();
+
+  const rap = page.getByLabel(/Harga RAP per/i);
+  await expect(rap).toBeVisible();
+
+  // Seeded resources carry a RAP price, so the field must not open empty.
+  await expect(rap).not.toHaveValue('');
+
+  await expect(page.getByLabel(/Markup RAB atas RAP/i)).toBeVisible();
+});
+
 test('sidebar tidak menyisakan modul terkunci', async ({ page }) => {
   await signIn(page);
   const id = await openFirstProject(page);
