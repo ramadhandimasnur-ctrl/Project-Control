@@ -92,6 +92,14 @@ export function WorkItemDialog({
     setValue('volumeRap', value, { shouldValidate: false });
   };
 
+  /** The execution unit follows the contracted one on the same terms. */
+  const unitRapTouched = useRef(String(defaultValues?.unitRapId ?? '').trim() !== '');
+
+  const onUnitEdit = (value: string) => {
+    if (unitRapTouched.current) return;
+    setValue('unitRapId', value, { shouldValidate: false });
+  };
+
   const onPriceEdit = (field: 'rap' | 'rab' | 'markup', value: string) => {
     const current = {
       rap: String(getValues('unitPriceRap') ?? ''),
@@ -191,9 +199,15 @@ export function WorkItemDialog({
           <div className="grid gap-4 sm:grid-cols-2">
             <SelectField
               id="wi-unitId"
-              label="Satuan"
+              label="Satuan RAB"
               error={messageOf('unitId')}
-              registration={register('unitId')}
+              registration={{
+                ...register('unitId'),
+                onChange: async (event: React.ChangeEvent<HTMLSelectElement>) => {
+                  await register('unitId').onChange(event);
+                  onUnitEdit(event.target.value);
+                },
+              }}
               placeholder="Pilih satuan"
               options={units.map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` }))}
             />
@@ -225,20 +239,43 @@ export function WorkItemDialog({
             line that genuinely differs is not overwritten the next time the
             contracted volume is corrected.
           */}
-          <TextField
-            id="volumeRap"
-            label="Volume RAP"
-            inputMode="decimal"
-            hint="Volume yang direncanakan dikerjakan. Kosongkan bila sama dengan volume RAB."
-            error={messageOf('volumeRap')}
-            registration={{
-              ...register('volumeRap'),
-              onChange: async (event: React.ChangeEvent<HTMLInputElement>) => {
-                await register('volumeRap').onChange(event);
-                volumeRapTouched.current = event.target.value.trim() !== '';
-              },
-            }}
-          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/*
+              The execution unit is a measure of its own, not a conversion of
+              the contracted one: galian sold by compacted m3 may be run by
+              loose m3 or by the truckload. Nothing converts between them —
+              a factor invented here would be a number nobody agreed to — so
+              the RAP coefficients are simply written per this unit.
+            */}
+            <SelectField
+              id="unitRapId"
+              label="Satuan RAP"
+              error={messageOf('unitRapId')}
+              registration={{
+                ...register('unitRapId'),
+                onChange: async (event: React.ChangeEvent<HTMLSelectElement>) => {
+                  await register('unitRapId').onChange(event);
+                  unitRapTouched.current = event.target.value.trim() !== '';
+                },
+              }}
+              placeholder="Ikut satuan RAB"
+              options={units.map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` }))}
+            />
+            <TextField
+              id="volumeRap"
+              label="Volume RAP"
+              inputMode="decimal"
+              hint="Volume yang direncanakan dikerjakan. Kosongkan bila sama dengan volume RAB."
+              error={messageOf('volumeRap')}
+              registration={{
+                ...register('volumeRap'),
+                onChange: async (event: React.ChangeEvent<HTMLInputElement>) => {
+                  await register('volumeRap').onChange(event);
+                  volumeRapTouched.current = event.target.value.trim() !== '';
+                },
+              }}
+            />
+          </div>
 
           {/*
             Direct prices, for lines that carry no AHSP.

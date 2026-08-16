@@ -170,6 +170,7 @@ export default async function WorkItemsPage({
                     spec: selected.spec ?? '',
                     groupId: selected.groupId ?? '',
                     unitId: selected.unitId,
+                    unitRapId: selected.unitRapId ?? '',
                     volume: selected.volume,
                     volumeRap: selected.volumeRap ?? '',
                     contractUnitPrice: selected.contractUnitPrice ?? '',
@@ -192,7 +193,6 @@ export default async function WorkItemsPage({
               workItemId={selected.id}
               workItemCode={selected.code}
               workItemName={selected.name}
-              unitCode={selected.unitCode}
               estimate={estimate}
               canEdit={canEdit}
               showCosts={showCosts}

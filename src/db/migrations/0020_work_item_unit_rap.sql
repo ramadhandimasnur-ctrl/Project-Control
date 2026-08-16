@@ -1,0 +1,2 @@
+ALTER TABLE "work_items" ADD COLUMN "unit_rap_id" uuid;--> statement-breakpoint
+ALTER TABLE "work_items" ADD CONSTRAINT "work_items_unit_rap_id_units_id_fk" FOREIGN KEY ("unit_rap_id") REFERENCES "public"."units"("id") ON DELETE restrict ON UPDATE no action;

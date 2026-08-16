@@ -1,6 +1,7 @@
 import 'server-only';
 
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 
 import { db } from '@/db';
 import { withUser } from '@/db/context';
@@ -22,6 +23,9 @@ import { writeAuditLog } from './audit';
 import { canViewOrgCosts } from './org-access';
 import { resolvePriceMap, type MissingPrice } from './prices';
 import { type SessionUser } from './session';
+
+/** The units table joined a second time, for the execution unit. */
+const unitRap = alias(units, 'unit_rap');
 
 export type AhspRole = 'LABOR' | 'MATERIAL' | 'EQUIPMENT' | 'SUBCON' | 'PACKAGE';
 export type EstimateType = 'RAB' | 'RAP';
@@ -49,6 +53,9 @@ export type AhspLineView = {
 
 export type WorkItemEstimateView = {
   workItemId: string;
+  unitCode: string;
+  /** Resolved: equal to `unitCode` unless the item measures RAP differently. */
+  unitCodeRap: string;
   volume: string;
   /** Resolved: equal to `volume` unless the item stores a different one. */
   volumeRap: string;
@@ -91,6 +98,8 @@ export async function getWorkItemEstimate(
   const [item] = await db
     .select({
       id: workItems.id,
+      unitCode: units.code,
+      unitCodeRap: sql<string>`coalesce(${unitRap.code}, ${units.code})`,
       volume: workItems.volume,
       volumeRap: workItems.volumeRap,
       contractUnitPrice: workItems.contractUnitPrice,
@@ -98,6 +107,8 @@ export async function getWorkItemEstimate(
       unitPriceRap: workItems.unitPriceRap,
     })
     .from(workItems)
+    .innerJoin(units, eq(units.id, workItems.unitId))
+    .leftJoin(unitRap, eq(unitRap.id, workItems.unitRapId))
     .where(and(eq(workItems.id, workItemId), eq(workItems.projectId, projectId)))
     .limit(1);
 
@@ -210,6 +221,8 @@ export async function getWorkItemEstimate(
 
   return {
     workItemId,
+    unitCode: item.unitCode,
+    unitCodeRap: item.unitCodeRap,
     volume: item.volume,
     volumeRap: volumeRap.toString(),
     unitCostRab: estimate.unitCostRab.toFixed(2),
@@ -236,6 +249,8 @@ export type WorkItemAnalyses = {
   name: string;
   spec: string | null;
   unitCode: string;
+  /** Resolved: equal to `unitCode` unless the item measures RAP differently. */
+  unitCodeRap: string;
   groupName: string | null;
   volume: string;
   volumeRap: string;
@@ -270,6 +285,7 @@ export async function listWorkItemAnalyses(
       spec: workItems.spec,
       groupName: workGroups.name,
       unitCode: units.code,
+      unitCodeRap: sql<string>`coalesce(${unitRap.code}, ${units.code})`,
       volume: workItems.volume,
       volumeRap: workItems.volumeRap,
       unitPriceRab: workItems.unitPriceRab,
@@ -277,6 +293,7 @@ export async function listWorkItemAnalyses(
     })
     .from(workItems)
     .innerJoin(units, eq(units.id, workItems.unitId))
+    .leftJoin(unitRap, eq(unitRap.id, workItems.unitRapId))
     .leftJoin(workGroups, eq(workGroups.id, workItems.groupId))
     .where(
       options.workItemId === undefined
@@ -388,6 +405,7 @@ export async function listWorkItemAnalyses(
         name: item.name,
         spec: item.spec,
         unitCode: item.unitCode,
+        unitCodeRap: item.unitCodeRap,
         groupName: item.groupName,
         volume: item.volume,
         volumeRap: volumeRap.toString(),
@@ -424,6 +442,8 @@ export type ProjectEstimateItem = {
   name: string;
   groupName: string | null;
   unitCode: string;
+  /** Resolved: equal to `unitCode` unless the item measures RAP differently. */
+  unitCodeRap: string;
   volume: string;
   /** Resolved: equal to `volume` unless the item stores a different one. */
   volumeRap: string;
@@ -501,6 +521,7 @@ export async function getProjectEstimate(
       name: workItems.name,
       groupName: workGroups.name,
       unitCode: units.code,
+      unitCodeRap: sql<string>`coalesce(${unitRap.code}, ${units.code})`,
       volume: workItems.volume,
       volumeRap: workItems.volumeRap,
       contractUnitPrice: workItems.contractUnitPrice,
@@ -510,6 +531,7 @@ export async function getProjectEstimate(
     })
     .from(workItems)
     .innerJoin(units, eq(units.id, workItems.unitId))
+    .leftJoin(unitRap, eq(unitRap.id, workItems.unitRapId))
     .leftJoin(workGroups, eq(workGroups.id, workItems.groupId))
     .where(and(eq(workItems.projectId, projectId), eq(workItems.isActive, true)))
     .orderBy(asc(workItems.sortOrder), asc(workItems.code));
@@ -606,6 +628,7 @@ export async function getProjectEstimate(
       name: item.name,
       groupName: item.groupName,
       unitCode: item.unitCode,
+      unitCodeRap: item.unitCodeRap,
       volume: item.volume,
       volumeRap: item.volumeRap ?? item.volume,
       includeInProgressWeight: item.includeInProgressWeight,

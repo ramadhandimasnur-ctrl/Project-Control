@@ -141,6 +141,13 @@
       "when": 1786887826096,
       "tag": "0019_contract_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1786889403011,
+      "tag": "0020_work_item_unit_rap",
+      "breakpoints": true
     }
   ]
 }

@@ -58,7 +58,6 @@ export function AhspPanel({
   workItemId,
   workItemCode,
   workItemName,
-  unitCode,
   estimate,
   resources,
   canEdit,
@@ -68,7 +67,6 @@ export function AhspPanel({
   workItemId: string;
   workItemCode: string;
   workItemName: string;
-  unitCode: string;
   estimate: WorkItemEstimateView;
   resources: { id: string; code: string; name: string; spec: string | null; unitCode: string }[];
   canEdit: boolean;
@@ -99,10 +97,10 @@ export function AhspPanel({
           <h2 className="text-lg font-semibold">{workItemName}</h2>
         </div>
         <p className="text-sm text-muted-foreground">
-          Volume {formatQuantity(estimate.volume)} {unitCode}
-          {estimate.volumeRap === estimate.volume
+          Volume {formatQuantity(estimate.volume)} {estimate.unitCode}
+          {estimate.volumeRap === estimate.volume && estimate.unitCodeRap === estimate.unitCode
             ? ''
-            : ` · RAP ${formatQuantity(estimate.volumeRap)} ${unitCode}`}
+            : ` · RAP ${formatQuantity(estimate.volumeRap)} ${estimate.unitCodeRap}`}
         </p>
       </div>
 
@@ -134,7 +132,7 @@ export function AhspPanel({
           unitCost={estimateType === 'RAB' ? estimate.unitCostRab : estimate.unitCostRap}
           volume={estimateType === 'RAB' ? estimate.volume : estimate.volumeRap}
           total={estimateType === 'RAB' ? estimate.totalRab : estimate.totalRap}
-          unitCode={unitCode}
+          unitCode={estimateType === 'RAB' ? estimate.unitCode : estimate.unitCodeRap}
           canEdit={canEdit}
           showCosts={showCosts}
           pending={pending}
@@ -168,18 +166,38 @@ export function AhspPanel({
         <div className="grid gap-3 lg:grid-cols-2">
           <div className="rounded-lg border p-4">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Per {unitCode}
+              Per satuan
             </p>
             <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-3">
-              <Figure label="Harga satuan RAB" value={estimate.unitCostRab} />
-              <Figure label="Harga satuan RAP" value={estimate.unitCostRap} />
-              <Figure label="Selisih" value={estimate.estimateSpread} />
+              <Figure
+                label={`Harga satuan RAB / ${estimate.unitCode}`}
+                value={estimate.unitCostRab}
+              />
+              <Figure
+                label={`Harga satuan RAP / ${estimate.unitCodeRap}`}
+                value={estimate.unitCostRap}
+              />
+              {/*
+                Only comparable when both sides measure the same way. A rate
+                per compacted m3 minus a rate per truckload is a number with no
+                meaning, and printing it invites someone to act on it.
+              */}
+              {estimate.unitCodeRap === estimate.unitCode ? (
+                <Figure label="Selisih" value={estimate.estimateSpread} />
+              ) : (
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">Selisih</dt>
+                  <dd className="mt-0.5 text-xs text-muted-foreground">
+                    Satuan RAB dan RAP berbeda, jadi harga satuannya tidak dibandingkan langsung.
+                  </dd>
+                </div>
+              )}
             </dl>
           </div>
 
           <div className="rounded-lg border bg-muted/30 p-4">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Total pekerjaan · volume {formatQuantity(estimate.volume)} {unitCode}
+              Total pekerjaan · volume {formatQuantity(estimate.volume)} {estimate.unitCode}
             </p>
             <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
               <Figure label="Total RAB" value={estimate.totalRab} strong />

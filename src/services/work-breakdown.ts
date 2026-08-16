@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { and, asc, count, eq, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 
 import { db } from '@/db';
 import { withUser } from '@/db/context';
@@ -180,6 +181,9 @@ export type WorkItemRow = {
   volume: string;
   /** Null when execution builds exactly the contracted volume. */
   volumeRap: string | null;
+  unitRapId: string | null;
+  /** Falls back to the RAB unit when execution measures the same way. */
+  unitRapCode: string;
   contractUnitPrice: string | null;
   unitPriceRab: string | null;
   unitPriceRap: string | null;
@@ -193,6 +197,9 @@ export type WorkItemRow = {
   /** True when volume is derived from take-off rows rather than typed. */
   hasTakeoffs: boolean;
 };
+
+/** The units table joined a second time, for the execution unit. */
+const unitRap = alias(units, 'unit_rap');
 
 export async function listWorkItems(userId: string, projectId: string): Promise<WorkItemRow[]> {
   await assertProjectAccess(userId, projectId, 'VIEWER');
@@ -226,6 +233,9 @@ export async function listWorkItems(userId: string, projectId: string): Promise<
       unitCode: units.code,
       volume: workItems.volume,
       volumeRap: workItems.volumeRap,
+      unitRapId: workItems.unitRapId,
+      // Resolved in SQL so every caller gets the same fallback.
+      unitRapCode: sql<string>`coalesce(${unitRap.code}, ${units.code})`,
       contractUnitPrice: workItems.contractUnitPrice,
       unitPriceRab: workItems.unitPriceRab,
       unitPriceRap: workItems.unitPriceRap,
@@ -239,6 +249,7 @@ export async function listWorkItems(userId: string, projectId: string): Promise<
     })
     .from(workItems)
     .innerJoin(units, eq(units.id, workItems.unitId))
+    .leftJoin(unitRap, eq(unitRap.id, workItems.unitRapId))
     .leftJoin(workGroups, eq(workGroups.id, workItems.groupId))
     .leftJoin(lines, eq(lines.workItemId, workItems.id))
     .leftJoin(takeoffs, eq(takeoffs.workItemId, workItems.id))

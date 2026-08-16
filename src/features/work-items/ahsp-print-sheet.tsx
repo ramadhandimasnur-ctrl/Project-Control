@@ -57,9 +57,9 @@ export function AhspPrintSheet({
         {item.spec ? <p className="text-xs text-muted-foreground">{item.spec}</p> : null}
         <p className="text-xs text-muted-foreground">
           Volume RAB {formatQuantity(item.volume)} {item.unitCode}
-          {item.volumeRap === item.volume
+          {item.volumeRap === item.volume && item.unitCodeRap === item.unitCode
             ? ''
-            : ` · Volume RAP ${formatQuantity(item.volumeRap)} ${item.unitCode}`}
+            : ` · Volume RAP ${formatQuantity(item.volumeRap)} ${item.unitCodeRap}`}
         </p>
       </header>
 
@@ -70,7 +70,7 @@ export function AhspPrintSheet({
           lines={item.lines.filter((line) => line.estimateType === estimateType)}
           subtotals={item.subtotals[estimateType]}
           unitCost={estimateType === 'RAB' ? item.unitCostRab : item.unitCostRap}
-          unitCode={item.unitCode}
+          unitCode={estimateType === 'RAB' ? item.unitCode : item.unitCodeRap}
           showCosts={showCosts}
         />
       ))}
@@ -79,11 +79,23 @@ export function AhspPrintSheet({
         <div data-print="keep-together" className="rounded-md border p-3 text-sm">
           <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-3">
             <Pair label={`Harga satuan RAB / ${item.unitCode}`} value={item.unitCostRab} />
-            <Pair label={`Harga satuan RAP / ${item.unitCode}`} value={item.unitCostRap} />
-            <Pair
-              label="Selisih RAB − RAP"
-              value={(Number(item.unitCostRab) - Number(item.unitCostRap)).toFixed(2)}
-            />
+            <Pair label={`Harga satuan RAP / ${item.unitCodeRap}`} value={item.unitCostRap} />
+            {/*
+              Unit rates are only comparable when both sides measure the same
+              way. Totals always are — they are money for the whole item — so
+              the difference below stays whatever the units.
+            */}
+            {item.unitCodeRap === item.unitCode ? (
+              <Pair
+                label="Selisih RAB − RAP"
+                value={(Number(item.unitCostRab) - Number(item.unitCostRap)).toFixed(2)}
+              />
+            ) : (
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="text-xs text-muted-foreground">Selisih harga satuan</dt>
+                <dd className="text-xs text-muted-foreground">satuan berbeda</dd>
+              </div>
+            )}
             <Pair label="Total RAB" value={item.totalRab} />
             <Pair label="Total RAP" value={item.totalRap} />
             <Pair

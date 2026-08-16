@@ -84,6 +84,8 @@ export const workItemFormSchema = z.object({
   spec: optionalText(500),
   groupId: optionalId(),
   unitId: requiredId('Satuan'),
+  /** Blank follows the contracted unit; the two are measures, not a conversion. */
+  unitRapId: optionalId(),
   volume: quantityField('Volume'),
   /** Blank follows the contracted volume; see the column comment on work_items. */
   volumeRap: optionalQuantity('Volume RAP'),
@@ -125,6 +127,7 @@ export const WORK_ITEM_FORM_DEFAULTS = {
   spec: '',
   groupId: '',
   unitId: '',
+  unitRapId: '',
   volume: '0',
   volumeRap: '',
   contractUnitPrice: '',

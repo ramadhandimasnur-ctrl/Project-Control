@@ -52,6 +52,16 @@ export const workItems = pgTable(
     unitId: uuid('unit_id')
       .notNull()
       .references(() => units.id, { onDelete: 'restrict' }),
+    /*
+     * The unit execution measures in, when it differs from the contracted one.
+     *
+     * Null means "the same as `unitId`". The two are independent measures, not
+     * a conversion: earthworks sold by compacted m3 may be executed by loose
+     * m3 or by truckload, and the RAP coefficients are written per this unit.
+     * Nothing converts between them, because a factor invented here would be
+     * a number nobody agreed to.
+     */
+    unitRapId: uuid('unit_rap_id').references(() => units.id, { onDelete: 'restrict' }),
     volume: quantity('volume').notNull().default('0'),
     /*
      * The volume execution plans to build, when it differs from the contracted

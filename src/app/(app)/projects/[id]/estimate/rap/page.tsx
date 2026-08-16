@@ -138,13 +138,13 @@ export default async function RapPage({ params }: { params: Promise<{ id: string
                       */}
                       <TableCell className="text-right font-mono tabular-nums">
                         {formatQuantity(item.volumeRap)}
-                        {item.volumeRap === item.volume ? null : (
+                        {item.volumeRap === item.volume && item.unitCodeRap === item.unitCode ? null : (
                           <span className="block text-[10px] text-muted-foreground">
-                            RAB {formatQuantity(item.volume)}
+                            RAB {formatQuantity(item.volume)} {item.unitCode}
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{item.unitCode}</TableCell>
+                      <TableCell className="text-muted-foreground">{item.unitCodeRap}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">
                         {formatCurrency(item.unitCostRap)}
                       </TableCell>
