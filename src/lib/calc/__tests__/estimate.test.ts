@@ -145,3 +145,82 @@ describe('estimateWorkItem', () => {
     expect(result.estimateSpreadPercent).toBeNull();
   });
 });
+
+/*
+ * Lump-sum lines — mobilisation, a site office, a one-off permit — have a price
+ * and no analysis worth writing. They may carry the price directly.
+ */
+describe('estimateWorkItem with a direct price', () => {
+  it('costs a line that has no analysis from the prices typed on it', () => {
+    const result = estimateWorkItem({
+      volume: '1',
+      lines: [],
+      contractUnitPrice: null,
+      directUnitRab: '25000000',
+      directUnitRap: '20000000',
+    });
+
+    expect(result.unitCostRab.toFixed(2)).toBe('25000000.00');
+    expect(result.unitCostRap.toFixed(2)).toBe('20000000.00');
+    expect(result.totalRab.toFixed(2)).toBe('25000000.00');
+    expect(result.estimateSpread.toFixed(2)).toBe('5000000.00');
+  });
+
+  it('multiplies the direct price by the volume like any other rate', () => {
+    const result = estimateWorkItem({
+      volume: '4',
+      lines: [],
+      contractUnitPrice: null,
+      directUnitRab: '150000',
+      directUnitRap: '150000',
+    });
+
+    expect(result.totalRab.toFixed(2)).toBe('600000.00');
+    expect(result.totalRap.toFixed(2)).toBe('600000.00');
+    expect(result.estimateSpread.toString()).toBe('0');
+  });
+
+  it('falls back to the other side when only one direct price is given', () => {
+    const rapOnly = estimateWorkItem({
+      volume: '1',
+      lines: [],
+      contractUnitPrice: null,
+      directUnitRap: '900000',
+    });
+    expect(rapOnly.unitCostRab.toFixed(2)).toBe('900000.00');
+    expect(rapOnly.unitCostRap.toFixed(2)).toBe('900000.00');
+
+    const rabOnly = estimateWorkItem({
+      volume: '1',
+      lines: [],
+      contractUnitPrice: null,
+      directUnitRab: '900000',
+    });
+    expect(rabOnly.unitCostRap.toFixed(2)).toBe('900000.00');
+  });
+
+  /*
+   * The analysis wins whenever there is one. Letting a typed figure override it
+   * would give the same work two different rates depending on which screen was
+   * open, and the panel listing the resources would stop explaining the number
+   * printed beside it.
+   */
+  it('ignores the direct price once the item has analysis lines', () => {
+    const result = estimateWorkItem({
+      volume: '100',
+      lines: CONCRETE_LINES,
+      contractUnitPrice: null,
+      directUnitRab: '1',
+      directUnitRap: '1',
+    });
+
+    expect(result.unitCostRab.toFixed(2)).toBe('1126690.00');
+    expect(result.unitCostRap.toFixed(2)).toBe('1078650.00');
+  });
+
+  it('leaves a line with neither analysis nor direct price at zero', () => {
+    const result = estimateWorkItem({ volume: '10', lines: [], contractUnitPrice: null });
+    expect(result.unitCostRab.toString()).toBe('0');
+    expect(result.unitCostRap.toString()).toBe('0');
+  });
+});

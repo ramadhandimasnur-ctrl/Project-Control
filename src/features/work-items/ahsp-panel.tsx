@@ -254,6 +254,21 @@ export function AhspPanel({
       })}
 
       {/*
+        A unit rate with no analysis under it would otherwise be a number with
+        no visible origin, which is exactly what this system exists to avoid.
+        Say where it came from.
+      */}
+      {showCosts &&
+      estimate.lines.length === 0 &&
+      (Number(estimate.unitCostRab) > 0 || Number(estimate.unitCostRap) > 0) ? (
+        <p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+          Pekerjaan ini belum punya baris analisa, jadi harga satuan di bawah diambil dari harga
+          langsung yang diketik pada form pekerjaan. Begitu baris analisa ditambahkan, angkanya
+          dihitung dari analisa itu dan harga langsung diabaikan.
+        </p>
+      ) : null}
+
+      {/*
         Two blocks rather than one eight-cell grid. Per-unit and whole-item
         figures are different orders of magnitude, and mixing them made it easy
         to read a unit rate as a total.
