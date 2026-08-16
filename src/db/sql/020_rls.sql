@@ -196,7 +196,16 @@ BEGIN
       ('subcontract_advances',
         'EXISTS (SELECT 1 FROM public.subcontracts s WHERE s.id = subcontract_id AND pc_can_access_project(s.project_id))', true),
       ('subcontract_certificates',
-        'EXISTS (SELECT 1 FROM public.subcontracts s WHERE s.id = subcontract_id AND pc_can_access_project(s.project_id))', true)
+        'EXISTS (SELECT 1 FROM public.subcontracts s WHERE s.id = subcontract_id AND pc_can_access_project(s.project_id))', true),
+      -- Change orders. The two child tables reach the project through their
+      -- header rather than carrying project_id themselves, the same shape the
+      -- baseline distributions use.
+      ('contract_baselines',          'pc_can_access_project(project_id)',            true),
+      ('contract_baseline_items',
+        'EXISTS (SELECT 1 FROM public.contract_baselines b WHERE b.id = baseline_id AND pc_can_access_project(b.project_id))', true),
+      ('contract_revisions',          'pc_can_access_project(project_id)',            true),
+      ('contract_revision_lines',
+        'EXISTS (SELECT 1 FROM public.contract_revisions r WHERE r.id = revision_id AND pc_can_access_project(r.project_id))', true)
     ) AS v(table_name, predicate, force_rls)
   LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', rec.table_name);

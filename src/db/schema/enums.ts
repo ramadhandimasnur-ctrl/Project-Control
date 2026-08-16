@@ -102,6 +102,19 @@ export const progressStatusEnum = pgEnum('progress_status', [
 ]);
 export const checklistResultEnum = pgEnum('checklist_result', ['PASS', 'FAIL', 'NA']);
 
+/**
+ * A change order is drafted, then approved or abandoned.
+ *
+ * Cancelled rather than deleted: a revision that was proposed and turned down
+ * is part of how the contract got to where it is, and the sequence numbers
+ * would otherwise be reused and stop matching the paperwork.
+ */
+export const contractRevisionStatusEnum = pgEnum('contract_revision_status', [
+  'DRAFT',
+  'APPROVED',
+  'CANCELLED',
+]);
+
 // --- Purchasing & inventory -----------------------------------------------
 export const purchaseStatusEnum = pgEnum('purchase_status', ['DRAFT', 'POSTED', 'VOID']);
 export const materialTxnTypeEnum = pgEnum('material_txn_type', [

@@ -123,9 +123,9 @@ describe('takeoffFormSchema', () => {
 describe('ahspLineFormSchema', () => {
   const line = (overrides: Record<string, unknown> = {}) => ({
     resourceId: UUID,
+    estimateType: 'RAB',
     role: 'MATERIAL',
-    coefRab: '8',
-    coefRap: '8',
+    coef: '8',
     wasteFactor: '0',
     note: '',
     sortOrder: 0,
@@ -138,14 +138,26 @@ describe('ahspLineFormSchema', () => {
     );
   });
 
-  // A line contributing to neither estimate is almost always half-entered.
-  it('rejects a line whose coefficients are both zero', () => {
-    const result = ahspLineFormSchema.safeParse(line({ coefRab: '0', coefRap: '0' }));
+  // A line contributing nothing is almost always half-entered.
+  it('rejects a line whose coefficient is zero', () => {
+    const result = ahspLineFormSchema.safeParse(line({ coef: '0' }));
     expect(result.success).toBe(false);
-    expect(messageFor(result, 'coefRap')).toMatch(/lebih besar dari nol/);
+    expect(messageFor(result, 'coef')).toMatch(/lebih besar dari nol/);
   });
 
-  it('allows one coefficient to be zero while the other is not', () => {
-    expect(ahspLineFormSchema.safeParse(line({ coefRab: '0', coefRap: '8' })).success).toBe(true);
+  /*
+   * The analysis a line belongs to is part of its identity now, not an
+   * optional hint: the same resource may sit in one analysis and not the
+   * other, and a line that does not say which one cannot be placed.
+   */
+  it('requires the analysis the line belongs to', () => {
+    const values = line();
+    delete (values as Record<string, unknown>).estimateType;
+    expect(ahspLineFormSchema.safeParse(values).success).toBe(false);
+  });
+
+  it('accepts a line on either analysis', () => {
+    expect(ahspLineFormSchema.safeParse(line({ estimateType: 'RAB' })).success).toBe(true);
+    expect(ahspLineFormSchema.safeParse(line({ estimateType: 'RAP' })).success).toBe(true);
   });
 });

@@ -4,6 +4,7 @@ import {
   CalendarRange,
   ClipboardCheck,
   FileBarChart,
+  FileDiff,
   FileText,
   LayoutDashboard,
   Package,
@@ -67,6 +68,18 @@ export function projectNavSections(projectId: string): NavSection[] {
           label: 'RAP',
           href: `${base}/estimate/rap`,
           icon: Calculator,
+          phase: 3,
+          requiresCostAccess: true,
+        },
+        /*
+         * Sits with the estimate rather than under Pengaturan: a change order
+         * is an estimating act — volumes and money — and the person drafting
+         * one has the RAB open beside it.
+         */
+        {
+          label: 'Pekerjaan Tambah/Kurang',
+          href: `${base}/cco`,
+          icon: FileDiff,
           phase: 3,
           requiresCostAccess: true,
         },

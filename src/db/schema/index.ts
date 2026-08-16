@@ -14,3 +14,4 @@ export * from './inventory';
 export * from './subcontract';
 export * from './cash';
 export * from './reporting';
+export * from './contract';
