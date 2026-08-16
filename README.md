@@ -119,6 +119,7 @@ npm run dev
 | `npm run db:views` | Terapkan trigger, RLS, dan view |
 | `npm run db:setup` | `db:migrate` + `db:views` |
 | `npm run db:seed` | Isi data demo |
+| `npm run mail:test` | Kirim satu email uji lewat transport notifikasi yang dikonfigurasi |
 | `npm run db:import:utba -- "<file.xlsx>" --email=<admin>` | Baca sheet UTBA tanpa menyimpan |
 | `npm run db:import:utba -- "<file.xlsx>" --email=<admin> --apply` | Impor sumber daya ke katalog |
 | `npm run db:reset -- --force` | **Hapus seluruh schema public.** Hanya untuk pengembangan |
@@ -237,6 +238,42 @@ npm run e2e
 Uji asap masuk memakai `SEED_ADMIN_EMAIL` dan `SEED_ADMIN_PASSWORD`, lalu
 membuka setiap modul proyek dan memeriksa ekspor Excel benar-benar menghasilkan
 berkas. Ia melewatkan dirinya sendiri bila kedua variabel itu kosong.
+
+### Pendaftaran dan persetujuan
+
+Pendaftar baru masuk berstatus `PENDING` dan tidak memperoleh sesi sampai
+seorang administrator menyetujuinya di halaman **Pengguna** sekaligus memilih
+perannya. Akun pertama pada instalasi kosong dikecualikan: ia membuat
+organisasinya, menjadi administrator, dan langsung aktif — harus ada yang dapat
+menyetujui akun kedua.
+
+`status` dan `is_active` ditulis bersama dan dikunci check constraint
+`users_status_matches_active`. Keduanya tidak dapat berselisih: `is_active`
+adalah yang dibaca sesi dan seluruh helper RLS, `status` yang ditampilkan di
+layar, dan menulis salah satunya saja akan ditolak basis data.
+
+Bila semua administrator terkunci di luar, jalan kembalinya adalah
+`npm run db:user`, yang menyetel status dan `is_active` sekaligus.
+
+### Notifikasi email
+
+Opsional dan tidak berpura-pura. Tanpa konfigurasi, pendaftaran tetap tercatat
+dan muncul di halaman Pengguna, tidak ada email yang dikirim, dan halaman itu
+mengatakannya terang-terangan — administrator yang mengira email sedang dalam
+perjalanan tidak akan terpikir membukanya.
+
+Tiga variabel mengaktifkannya:
+
+```
+RESEND_API_KEY=re_...
+NOTIFY_EMAIL_FROM=noreply@domain-terverifikasi
+NOTIFY_EMAIL_TO=alamat-administrator
+```
+
+`onboarding@resend.dev` dapat dipakai sebagai pengirim tanpa memverifikasi
+domain, tetapi Resend hanya mengirimkannya ke alamat pemilik akun Resend itu
+sendiri. Untuk mengirim ke alamat lain, verifikasi domain sendiri terlebih
+dahulu. Uji dengan `npm run mail:test`.
 
 ### Penyimpanan berkas
 

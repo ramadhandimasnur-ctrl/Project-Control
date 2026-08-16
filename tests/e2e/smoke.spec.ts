@@ -119,7 +119,10 @@ test('panel pengguna terbuka bagi administrator', async ({ page }) => {
   const response = await page.goto('/users', { timeout: 45_000 });
   expect(response?.status()).toBeLessThan(400);
 
-  await expect(page.getByRole('heading', { name: 'Pengguna' })).toBeVisible();
+  // Pinned to the page title. Plain `name: 'Pengguna'` also matches the
+  // "Semua pengguna" section heading, and an ambiguous locator fails on a
+  // wording change that broke nothing.
+  await expect(page.getByRole('heading', { level: 1, name: 'Pengguna' })).toBeVisible();
   await expect(page.getByText('Menunggu persetujuan').first()).toBeVisible();
   expect(errors).toEqual([]);
 });

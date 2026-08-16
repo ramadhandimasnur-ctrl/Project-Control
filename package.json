@@ -25,6 +25,7 @@
     "db:seed": "tsx src/db/seed.ts",
     "db:import:utba": "tsx --conditions=react-server src/db/import-utba.ts",
     "db:user": "tsx --conditions=react-server src/db/create-user.ts",
+    "mail:test": "tsx --conditions=react-server scripts/send-test-email.ts",
     "db:reset": "tsx src/db/reset.ts",
     "db:studio": "drizzle-kit studio"
   },
