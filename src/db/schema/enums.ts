@@ -15,11 +15,26 @@ export const globalRoleEnum = pgEnum('global_role', ['ADMIN', 'MEMBER']);
  * the session read. A check constraint ties the two together so they cannot
  * drift: only ACTIVE is active.
  */
+/**
+ * `REMOVED` is not a heavier `DEACTIVATED`; it answers a different question.
+ *
+ * Deactivating suspends someone who still belongs here — the account keeps its
+ * project memberships and its email, and switching it back on restores exactly
+ * what was there. Removing says they have left the organisation: memberships
+ * are gone and the sign-in credential is deleted, so the address is free for
+ * whoever holds it next.
+ *
+ * The row itself survives either way. Every table records `created_by` and
+ * `updated_by` against it, so deleting the person would blank the authorship of
+ * their progress entries, their purchases and the addenda they approved — in a
+ * system whose whole purpose is that every figure can be traced to someone.
+ */
 export const userStatusEnum = pgEnum('user_status', [
   'PENDING',
   'ACTIVE',
   'REJECTED',
   'DEACTIVATED',
+  'REMOVED',
 ]);
 
 export const projectRoleEnum = pgEnum('project_role', [

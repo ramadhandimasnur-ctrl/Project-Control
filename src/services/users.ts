@@ -4,10 +4,11 @@ import { and, asc, count, eq, ne } from 'drizzle-orm';
 
 import { db } from '@/db';
 import { withUser } from '@/db/context';
-import { organizations, users } from '@/db/schema';
+import { organizations, projectMembers, users } from '@/db/schema';
 import { type GlobalRole } from '@/lib/auth/roles';
 import { conflict, forbidden, notFound, validation } from '@/lib/errors';
 import { sendAdminEmail } from '@/lib/notify/email';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 import { USER_STATUS_LABELS, type UserRow, type UserStatus } from '@/lib/users/labels';
 
 import { writeAuditLog } from './audit';
@@ -266,6 +267,110 @@ export async function setGlobalRole(
       action: 'UPDATE',
       before: { globalRole: target.globalRole },
       after: { globalRole },
+      actorId: actor.id,
+    });
+  });
+}
+
+/**
+ * Removes someone from the organisation.
+ *
+ * Distinct from deactivating, which suspends an account that still belongs
+ * here: memberships and email survive, and switching it back on restores what
+ * was there. Removing says they have left. Their project memberships go, and so
+ * does the Supabase Auth credential — without that the address stays claimed
+ * forever and the person keeps a password to an account nobody can see.
+ *
+ * The application row stays, marked REMOVED. Every table records `created_by`
+ * and `updated_by` against it, and deleting the person would blank the
+ * authorship of their progress entries, their purchases and the addenda they
+ * approved. A traceability system that forgets who did the work has failed at
+ * the one job it has.
+ *
+ * The auth account is deleted before the row is marked, deliberately. If the
+ * credential survives a half-finished removal the person can still sign in; if
+ * the row survives one, the worst case is a stale label an administrator can
+ * see and fix.
+ */
+export async function removeUserFromOrg(
+  actor: SessionUser,
+  targetUserId: string,
+): Promise<void> {
+  const access = await assertOrgAccess(actor.id, 'ADMIN');
+
+  if (targetUserId === actor.id) {
+    throw forbidden(
+      'Anda tidak dapat mengeluarkan akun Anda sendiri.',
+      'Minta administrator lain melakukannya, agar tidak ada yang mengunci dirinya keluar.',
+    );
+  }
+
+  const [target] = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      fullName: users.fullName,
+      status: users.status,
+      globalRole: users.globalRole,
+      orgId: users.orgId,
+    })
+    .from(users)
+    .where(eq(users.id, targetUserId))
+    .limit(1);
+
+  if (!target || target.orgId !== access.orgId) {
+    throw notFound('Pengguna tidak ditemukan di organisasi ini.');
+  }
+
+  if (target.status === 'REMOVED') {
+    throw conflict(`"${target.fullName}" sudah dikeluarkan dari organisasi.`);
+  }
+
+  // Same guard as deactivation: an organisation with no administrator left has
+  // no way back in except a database console.
+  if (target.globalRole === 'ADMIN') {
+    await assertAnotherAdminRemains(access.orgId, targetUserId);
+  }
+
+  const memberships = await db
+    .select({ projectId: projectMembers.projectId })
+    .from(projectMembers)
+    .where(eq(projectMembers.userId, targetUserId));
+
+  /*
+   * Best effort, and deliberately not fatal. An auth account that is already
+   * gone — deleted by hand, or by an earlier attempt that failed later — must
+   * not block the rest of the removal, or the row stays ACTIVE forever and the
+   * screen keeps offering a button that cannot succeed.
+   */
+  let authDeleted = true;
+  try {
+    const { error } = await supabaseAdmin().auth.admin.deleteUser(targetUserId);
+    if (error) authDeleted = false;
+  } catch {
+    authDeleted = false;
+  }
+
+  await withUser(actor.id, async (tx) => {
+    await tx.delete(projectMembers).where(eq(projectMembers.userId, targetUserId));
+
+    await tx
+      .update(users)
+      .set({
+        status: 'REMOVED',
+        isActive: false,
+        reviewedBy: actor.id,
+        reviewedAt: new Date(),
+      })
+      .where(eq(users.id, targetUserId));
+
+    await writeAuditLog(tx, {
+      orgId: access.orgId,
+      tableName: 'users',
+      recordId: targetUserId,
+      action: 'UPDATE',
+      before: { status: target.status, projectCount: memberships.length },
+      after: { status: 'REMOVED', projectCount: 0, authDeleted },
       actorId: actor.id,
     });
   });

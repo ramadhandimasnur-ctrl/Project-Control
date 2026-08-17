@@ -1,6 +1,6 @@
 'use client';
 
-import { Ban, Check, Loader2, RotateCcw, X } from 'lucide-react';
+import { Ban, Check, Loader2, RotateCcw, UserMinus, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
@@ -31,13 +31,14 @@ import { EMPTY_VALUE, formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { USER_STATUS_LABELS, type UserRow, type UserStatus } from '@/lib/users/labels';
 
-import { reviewUserAction, setGlobalRoleAction } from './user-actions';
+import { removeUserAction, reviewUserAction, setGlobalRoleAction } from './user-actions';
 
 const STATUS_VARIANT: Record<UserStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   PENDING: 'default',
   ACTIVE: 'secondary',
   REJECTED: 'destructive',
   DEACTIVATED: 'outline',
+  REMOVED: 'destructive',
 };
 
 const ROLE_LABELS = { ADMIN: 'Administrator', MEMBER: 'Anggota' } as const;
@@ -226,6 +227,7 @@ export function UsersManager({
                 <TableHead className="w-44">Peran</TableHead>
                 <TableHead className="w-40">Status</TableHead>
                 <TableHead className="w-40" />
+                <TableHead className="w-36" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -321,7 +323,7 @@ export function UsersManager({
                             </AlertDialogFooter>
                           </AlertDialogContent>
                         </AlertDialog>
-                      ) : (
+                      ) : user.status === 'REMOVED' ? null : (
                         <Button
                           variant="outline"
                           size="sm"
@@ -337,6 +339,70 @@ export function UsersManager({
                           <RotateCcw className="size-3.5" aria-hidden />
                           Aktifkan
                         </Button>
+                      )}
+                    </TableCell>
+
+                    {/*
+                      Removal sits in its own column, away from the
+                      activate/deactivate pair. It is not a third setting on
+                      that dial: it drops every project membership and deletes
+                      the sign-in credential, and nothing here puts them back.
+                    */}
+                    <TableCell>
+                      {isSelf || user.status === 'REMOVED' ? null : (
+                        <AlertDialog>
+                          <AlertDialogTrigger
+                            render={
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive"
+                                disabled={busy}
+                              />
+                            }
+                          >
+                            <UserMinus className="size-3.5" aria-hidden />
+                            Keluarkan
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                Keluarkan {user.fullName} dari organisasi?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Keanggotaannya di seluruh proyek dilepas, dan akun masuknya dihapus
+                                sehingga alamat emailnya bebas dipakai mendaftar lagi. Tindakan ini
+                                tidak dapat dibatalkan dari sini — mengembalikannya berarti
+                                mendaftar ulang dan menyetujuinya kembali.
+                                <span className="mt-2 block">
+                                  Data yang pernah dibuatnya tetap utuh, dan namanya tetap tercatat
+                                  sebagai pembuat progres, pembelian, dan persetujuan yang pernah
+                                  dilakukannya.
+                                </span>
+                                <span className="mt-2 block">
+                                  Untuk sekadar menghentikan akses sementara, pakai
+                                  &ldquo;Nonaktifkan&rdquo;.
+                                </span>
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Batal</AlertDialogCancel>
+                              <Button
+                                variant="destructive"
+                                disabled={pending}
+                                onClick={() =>
+                                  run(
+                                    user.id,
+                                    () => removeUserAction(user.id),
+                                    `${user.fullName} dikeluarkan dari organisasi.`,
+                                  )
+                                }
+                              >
+                                Ya, keluarkan
+                              </Button>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       )}
                     </TableCell>
                   </TableRow>

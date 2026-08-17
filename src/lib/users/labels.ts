@@ -7,13 +7,14 @@
  * build fails, which is the good outcome; the bad one would be shipping it.
  */
 
-export type UserStatus = 'PENDING' | 'ACTIVE' | 'REJECTED' | 'DEACTIVATED';
+export type UserStatus = 'PENDING' | 'ACTIVE' | 'REJECTED' | 'DEACTIVATED' | 'REMOVED';
 
 export const USER_STATUS_LABELS: Record<UserStatus, string> = {
   PENDING: 'Menunggu persetujuan',
   ACTIVE: 'Aktif',
   REJECTED: 'Ditolak',
   DEACTIVATED: 'Dinonaktifkan',
+  REMOVED: 'Dikeluarkan',
 };
 
 export type UserRow = {

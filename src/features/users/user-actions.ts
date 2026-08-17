@@ -5,7 +5,12 @@ import { revalidatePath } from 'next/cache';
 import { type GlobalRole } from '@/lib/auth/roles';
 import { toUserMessage } from '@/lib/errors';
 import { requireSessionUser } from '@/services/session';
-import { reviewUser, setGlobalRole, type ReviewDecision } from '@/services/users';
+import {
+  removeUserFromOrg,
+  reviewUser,
+  setGlobalRole,
+  type ReviewDecision,
+} from '@/services/users';
 
 export type ActionResult = { ok: true } | { ok: false; message: string; hint?: string };
 
@@ -57,6 +62,26 @@ export async function setGlobalRoleAction(
   try {
     const user = await requireSessionUser();
     await setGlobalRole(user, targetUserId, globalRole as GlobalRole);
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidatePath('/users');
+  return { ok: true };
+}
+
+/**
+ * Removes someone from the organisation entirely.
+ *
+ * Separate from `reviewUserAction` because it is a different kind of act, not
+ * a heavier setting on the same dial: memberships are dropped and the sign-in
+ * credential is deleted. Giving it its own action keeps the confirmation copy
+ * and the audit entry honest about which one happened.
+ */
+export async function removeUserAction(targetUserId: string): Promise<ActionResult> {
+  try {
+    const user = await requireSessionUser();
+    await removeUserFromOrg(user, targetUserId);
   } catch (error) {
     return failure(error);
   }

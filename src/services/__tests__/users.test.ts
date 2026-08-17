@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { config as loadEnv } from 'dotenv';
 import postgres from 'postgres';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { connectionOptions } from '@/db/connection';
 import type * as UsersModule from '../users';
@@ -198,6 +198,105 @@ describe.skipIf(!ready)('Persetujuan pengguna', () => {
     await expect(
       service.reviewUser(admin, randomUUID(), { decision: 'REJECT' }),
     ).rejects.toThrow(/tidak ditemukan/i);
+  });
+
+  /*
+   * Removal is not a heavier deactivation. These assert the difference: the
+   * project memberships go, the row stays so authorship survives, and the
+   * guards that protect the organisation from locking itself out still hold.
+   *
+   * The Supabase Auth side is not asserted here. These fixtures exist only in
+   * Postgres — they were never given auth accounts — and the service treats a
+   * missing one as an already-finished job rather than a failure, which is
+   * exactly the path this exercises.
+   */
+  describe('mengeluarkan dari organisasi', () => {
+    const projectId = randomUUID();
+
+    const giveMembership = async (userId: string): Promise<void> => {
+      await sql.unsafe(`
+        BEGIN;
+        SELECT set_config('app.bypass_rls', 'on', true);
+        DELETE FROM projects WHERE id = '${projectId}';
+        INSERT INTO projects (id, org_id, code, name, start_date, end_date)
+          VALUES ('${projectId}', '${orgId}', 'KICK-1', 'Proyek Uji Kick',
+                  '2026-01-01', '2026-12-31');
+        INSERT INTO project_members (project_id, user_id, role)
+          VALUES ('${projectId}', '${userId}', 'ENGINEER');
+        COMMIT;
+      `).simple();
+    };
+
+    const membershipCount = async (userId: string): Promise<number> => {
+      const [row] = await sql<{ n: number }[]>`
+        SELECT count(*)::int AS n FROM project_members WHERE user_id = ${userId}
+      `;
+      return row?.n ?? 0;
+    };
+
+    it('melepas keanggotaan proyek dan menandai akunnya dikeluarkan', async () => {
+      await giveMembership(memberId);
+      expect(await membershipCount(memberId)).toBe(1);
+
+      await service.removeUserFromOrg(admin, memberId);
+
+      const row = await statusOf(memberId);
+      expect(row?.status).toBe('REMOVED');
+      expect(row?.is_active).toBe(false);
+      expect(await membershipCount(memberId)).toBe(0);
+    });
+
+    // The row is what every created_by and updated_by in the system points at.
+    it('menyisakan barisnya agar jejak kepengarangan tetap utuh', async () => {
+      await service.removeUserFromOrg(admin, memberId);
+
+      const [row] = await sql<{ full_name: string }[]>`
+        SELECT full_name FROM users WHERE id = ${memberId}
+      `;
+      expect(row?.full_name).toBe('Anggota Uji');
+    });
+
+    it('menolak mengeluarkan akun yang sudah dikeluarkan', async () => {
+      await service.removeUserFromOrg(admin, memberId);
+      await expect(service.removeUserFromOrg(admin, memberId)).rejects.toThrow(
+        /sudah dikeluarkan/,
+      );
+    });
+
+    it('menolak administrator mengeluarkan dirinya sendiri', async () => {
+      await expect(service.removeUserFromOrg(admin, adminId)).rejects.toThrow(
+        /tidak dapat mengeluarkan akun Anda sendiri/,
+      );
+    });
+
+    it('menolak pengguna organisasi lain', async () => {
+      await expect(service.removeUserFromOrg(admin, randomUUID())).rejects.toThrow(
+        /tidak ditemukan/,
+      );
+    });
+
+    it('mengizinkan mengeluarkan administrator lain selama pelakunya tetap ada', async () => {
+      await addSecondAdmin();
+      await service.removeUserFromOrg(admin, secondAdminId);
+      expect((await statusOf(secondAdminId))?.status).toBe('REMOVED');
+    });
+
+    /*
+     * After each test, not at the end of the block. The shared fixture rebuilds
+     * by deleting the organisation, and projects reference it with RESTRICT —
+     * one project left behind aborts that transaction, and every later test in
+     * the file then fails on a wound this one opened.
+     */
+    afterEach(async () => {
+      if (!sql) return;
+      await sql.unsafe(`
+        BEGIN;
+        SELECT set_config('app.bypass_rls', 'on', true);
+        SELECT set_config('app.allow_hard_delete', 'on', true);
+        DELETE FROM projects WHERE id = '${projectId}';
+        COMMIT;
+      `).simple();
+    });
   });
 
   it('menolak username yang sudah dipakai', async () => {
