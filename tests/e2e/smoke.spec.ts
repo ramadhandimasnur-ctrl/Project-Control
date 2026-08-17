@@ -172,6 +172,65 @@ test('menu proyek dapat dibuka dari layar ponsel', async ({ page }) => {
 });
 
 /*
+ * The parts of "feels right on a phone" that are actually measurable.
+ *
+ * Easing and blur are matters of taste and are left to the eye. A target
+ * smaller than a fingertip, a panel that hides the whole page, a backdrop that
+ * ignores taps, and a menu that scrolls the page behind it are not — each is a
+ * number or a state, and each is the kind of regression a redesign reintroduces
+ * without anyone noticing.
+ */
+test('laci proyek nyaman disentuh di layar ponsel', async ({ page }) => {
+  const viewport = { width: 390, height: 844 };
+  await page.setViewportSize(viewport);
+  await signIn(page);
+  await openFirstProject(page);
+
+  const trigger = page.getByRole('button', { name: 'Buka menu proyek' });
+  const triggerBox = await trigger.boundingBox();
+  expect(triggerBox?.height ?? 0, 'tombol burger lebih kecil dari 44px').toBeGreaterThanOrEqual(44);
+  expect(triggerBox?.width ?? 0).toBeGreaterThanOrEqual(44);
+
+  await trigger.click();
+  const drawer = page.getByRole('navigation', { name: 'Navigasi proyek' });
+  await expect(drawer).toBeVisible();
+
+  /*
+   * Wide enough to read, narrow enough that the page behind stays in view. A
+   * drawer at 100% is not a drawer, it is a second screen.
+   */
+  const panel = page.getByRole('dialog');
+  const panelBox = await panel.boundingBox();
+  const ratio = (panelBox?.width ?? 0) / viewport.width;
+  expect(ratio, `lebar laci ${Math.round(ratio * 100)}% dari layar`).toBeLessThanOrEqual(0.85);
+  expect(ratio).toBeGreaterThan(0.6);
+
+  // Every menu row is at least a fingertip tall.
+  const links = await drawer.getByRole('link').all();
+  expect(links.length).toBeGreaterThan(3);
+  for (const link of links) {
+    const box = await link.boundingBox();
+    const label = (await link.textContent())?.trim();
+    expect(box?.height ?? 0, `baris "${label}" lebih pendek dari 44px`).toBeGreaterThanOrEqual(44);
+  }
+
+  /*
+   * Scrolling the menu must not scroll the page underneath it. Without
+   * `overscroll-contain` the gesture chains through once the menu bottoms out,
+   * and the reader closes the drawer somewhere they never navigated to.
+   */
+  const scrollBefore = await page.evaluate(() => window.scrollY);
+  await drawer.hover();
+  await page.mouse.wheel(0, 2000);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.scrollY), 'halaman ikut bergeser').toBe(scrollBefore);
+
+  // Tapping the dark area closes it — the gesture everyone tries first.
+  await page.mouse.click(viewport.width - 12, viewport.height / 2);
+  await expect(drawer).toBeHidden();
+});
+
+/*
  * The account menu, opened rather than merely rendered.
  *
  * Its contents only mount on click, so a component that throws while opening

@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PROJECT_ROLE_LABELS, type ProjectRole } from '@/lib/auth/roles';
+import { cn } from '@/lib/utils';
 
 import { ProjectSidebar } from '../projects/project-sidebar';
 
@@ -61,9 +62,14 @@ export function ProjectMobileNav({
         data-print="hide"
         className="sticky top-14 z-20 flex items-center gap-3 border-b bg-background px-4 py-2 lg:hidden"
       >
+        {/*
+          A full 44px square. `icon-sm` is 32px, which is comfortable under a
+          mouse and a genuine miss under a thumb — and this is the one control
+          standing between a phone and every page in the project.
+        */}
         <DialogPrimitive.Trigger
           aria-label="Buka menu proyek"
-          render={<Button variant="outline" size="icon-sm" />}
+          render={<Button variant="outline" size="icon" className="size-11 shrink-0" />}
         >
           <Menu className="size-5" aria-hidden />
         </DialogPrimitive.Trigger>
@@ -79,8 +85,38 @@ export function ProjectMobileNav({
       </div>
 
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/40 duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 lg:hidden" />
-        <DialogPrimitive.Popup className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col bg-background shadow-xl outline-none duration-150 data-open:animate-in data-open:slide-in-from-left data-closed:animate-out data-closed:slide-out-to-left lg:hidden">
+        {/*
+          Tapping the dark area closes the drawer — Base UI's backdrop does that
+          for us. The blur is what separates the two planes: without it a menu
+          over a dense table reads as part of the table.
+        */}
+        <DialogPrimitive.Backdrop
+          className={cn(
+            'fixed inset-0 z-50 bg-black/50 lg:hidden',
+            'supports-backdrop-filter:backdrop-blur-sm',
+            'duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
+            'data-open:animate-in data-open:fade-in-0',
+            'data-closed:animate-out data-closed:fade-out-0 data-closed:duration-200',
+          )}
+        />
+        <DialogPrimitive.Popup
+          className={cn(
+            // 82% of the viewport at the narrowest, so the page behind stays
+            // visible: a panel that covers everything is a new screen, and the
+            // reader loses track of what they were looking at.
+            'fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-80 flex-col bg-background shadow-2xl outline-none lg:hidden',
+            /*
+             * A drawer that eases out fast and settles slowly reads as a
+             * physical panel; the linear 150ms it had before read as a jump.
+             * The curve is the one used for sheets on iOS — most of the travel
+             * happens early, then it decelerates into place. Closing is quicker
+             * than opening, because a dismissal that lingers feels unresponsive.
+             */
+            'duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
+            'data-open:animate-in data-open:slide-in-from-left',
+            'data-closed:animate-out data-closed:slide-out-to-left data-closed:duration-200',
+          )}
+        >
           <div className="flex items-start justify-between gap-2 border-b p-4">
             <div className="min-w-0">
               <p className="font-mono text-xs text-muted-foreground">{code}</p>
@@ -93,16 +129,23 @@ export function ProjectMobileNav({
             </div>
             <DialogPrimitive.Close
               aria-label="Tutup menu proyek"
-              render={<Button variant="ghost" size="icon-sm" className="shrink-0" />}
+              render={<Button variant="ghost" size="icon" className="size-11 shrink-0" />}
             >
-              <X className="size-4" aria-hidden />
+              <X className="size-5" aria-hidden />
             </DialogPrimitive.Close>
           </div>
 
-          {/* The only scrolling region: a long menu must not push the close
-              button off a short screen. */}
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <ProjectSidebar projectId={projectId} role={role} />
+          {/*
+            The only scrolling region, and it keeps its scrolling to itself.
+            `overscroll-contain` is the load-bearing part: without it, flicking
+            past the end of the menu hands the gesture to the page underneath,
+            which then scrolls behind the drawer — the reader closes the menu
+            and finds themselves somewhere they never navigated to.
+          */}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
+            <ProjectSidebar projectId={projectId} role={role} size="touch" />
+            {/* Breathing room past the last item, clear of a phone's home bar. */}
+            <div className="h-[env(safe-area-inset-bottom)] min-h-4" />
           </div>
         </DialogPrimitive.Popup>
       </DialogPrimitive.Portal>
