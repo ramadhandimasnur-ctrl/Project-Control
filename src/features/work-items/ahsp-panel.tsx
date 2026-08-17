@@ -223,6 +223,24 @@ export function AhspPanel({
         </div>
       ) : null}
 
+      {/*
+        Adding a line, from where a thumb can reach.
+
+        It opens on RAB/Bahan rather than asking first: the dialog's own two
+        selects are the place to change either, and a menu in front of a form
+        that already asks the same question is one tap of ceremony for nothing.
+        Above the sheet's own layer, since this floats inside it.
+      */}
+      {canEdit ? (
+        <Button
+          aria-label="Tambah baris analisa"
+          className="fixed bottom-5 right-5 z-[60] size-14 rounded-full shadow-lg lg:hidden"
+          onClick={() => setAdding({ role: 'MATERIAL', estimateType: 'RAB' })}
+        >
+          <Plus className="size-6" aria-hidden />
+        </Button>
+      ) : null}
+
       {adding !== null ? (
         <AhspLineDialog
           open
@@ -345,7 +363,77 @@ function AnalysisSection({
               ) : null}
             </div>
 
-            <div className="w-full rounded-lg border">
+            {/*
+              A phone gets the same figures stacked instead of a table.
+              Eight columns on a 390px screen either scroll sideways — where
+              the amounts sit, out of sight — or shrink until the numbers are
+              unreadable. Neither is a table anybody can check.
+            */}
+            <ul className="space-y-2 lg:hidden">
+              {roleLines.map((line) => (
+                <li key={line.id}>
+                  <button
+                    type="button"
+                    disabled={!canEdit}
+                    onClick={canEdit ? () => onEdit(line) : undefined}
+                    className="w-full rounded-lg border p-3 text-left transition-colors enabled:hover:bg-accent/40"
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {line.resourceCode}
+                      </span>
+                      {showCosts ? (
+                        <span className="font-mono text-sm font-semibold tabular-nums">
+                          {line.amount === null ? (
+                            <span className="text-destructive">{EMPTY_VALUE}</span>
+                          ) : (
+                            formatCurrency(line.amount)
+                          )}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <p className="mt-0.5 font-medium">{line.resourceName}</p>
+                    {line.resourceSpec ? (
+                      <p className="text-xs text-muted-foreground">{line.resourceSpec}</p>
+                    ) : null}
+
+                    {/* Coefficient, unit and base price, read top to bottom. */}
+                    <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                      <Detail label="Koefisien" value={formatCoefficient(line.coef)} />
+                      <Detail label="Satuan" value={line.unitCode} />
+                      <Detail
+                        label="Susut"
+                        value={
+                          Number(line.wasteFactor) === 0
+                            ? EMPTY_VALUE
+                            : formatPercent(line.wasteFactor, 1)
+                        }
+                      />
+                      <Detail label="Kebutuhan" value={formatQuantity(line.qty)} />
+                      {showCosts ? (
+                        <Detail
+                          label="Harga dasar"
+                          value={line.price === null ? EMPTY_VALUE : formatCurrency(line.price)}
+                          alert={line.price === null}
+                        />
+                      ) : null}
+                    </dl>
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            {showCosts ? (
+              <p className="flex items-baseline justify-between rounded-md bg-muted/50 px-3 py-2 text-sm lg:hidden">
+                <span>Jumlah {AHSP_ROLE_LABELS[role]}</span>
+                <span className="font-mono font-semibold tabular-nums">
+                  {formatCurrency(subtotals[role])}
+                </span>
+              </p>
+            ) : null}
+
+            <div className="hidden w-full rounded-lg border lg:block">
               <Table className="min-w-max">
                 <TableHeader>
                   <TableRow>
@@ -467,6 +555,28 @@ function AnalysisSection({
         </div>
       ) : null}
     </section>
+  );
+}
+
+/** One labelled figure inside a mobile analysis card. */
+function Detail({
+  label,
+  value,
+  alert,
+}: {
+  label: string;
+  value: string;
+  alert?: boolean;
+}) {
+  return (
+    <div>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd
+        className={`font-mono tabular-nums ${alert ? 'text-destructive' : ''}`}
+      >
+        {value}
+      </dd>
+    </div>
   );
 }
 

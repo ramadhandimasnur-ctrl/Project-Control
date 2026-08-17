@@ -231,6 +231,62 @@ test('laci proyek nyaman disentuh di layar ponsel', async ({ page }) => {
 });
 
 /*
+ * Pekerjaan & AHSP on a phone.
+ *
+ * The page is a two-column master/detail, which on a 390px screen gave the
+ * list 40% and the analysis the rest — both unreadable. What is asserted here
+ * is the shape of the fix: one column, the analysis behind a sheet rather than
+ * beside the list, and no table wide enough to push its amounts off-screen.
+ */
+test('halaman AHSP terbaca satu kolom di layar ponsel', async ({ page }) => {
+  const viewport = { width: 390, height: 844 };
+  await page.setViewportSize(viewport);
+  await signIn(page);
+  const id = await openFirstProject(page);
+  await page.goto(`/projects/${id}/work-items`);
+
+  // The list fills the width instead of sharing it with a squeezed panel.
+  const list = page.getByRole('navigation', { name: 'Daftar pekerjaan' });
+  const listBox = await list.boundingBox();
+  expect((listBox?.width ?? 0) / viewport.width).toBeGreaterThan(0.9);
+
+  const cards = list.getByRole('link');
+  if ((await cards.count()) === 0) {
+    test.skip(true, 'proyek ini belum punya pekerjaan; jalankan npm run db:seed');
+    return;
+  }
+
+  // Arriving at the list shows the list, not an analysis nobody asked for.
+  await expect(page.getByRole('dialog')).toBeHidden();
+
+  const first = cards.first();
+  expect((await first.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await first.click();
+
+  // The analysis arrives as a sheet, and it is full width.
+  const sheet = page.getByRole('dialog');
+  await expect(sheet).toBeVisible();
+  const sheetBox = await sheet.boundingBox();
+  expect((sheetBox?.width ?? 0) / viewport.width).toBeGreaterThan(0.95);
+
+  /*
+   * Nothing inside the sheet may be wider than the sheet. A table that
+   * overflows here is exactly the complaint this replaced — the amounts are
+   * the rightmost columns, so they are what disappears.
+   */
+  const overflow = await sheet.evaluate((node) => {
+    const root = node as HTMLElement;
+    return Array.from(root.querySelectorAll('*')).some(
+      (el) => (el as HTMLElement).scrollWidth > root.clientWidth + 1,
+    );
+  });
+  expect(overflow, 'ada elemen yang lebih lebar dari lembarnya').toBe(false);
+
+  await sheet.getByRole('button', { name: 'Tutup analisa' }).click();
+  await expect(sheet).toBeHidden();
+});
+
+/*
  * The account menu, opened rather than merely rendered.
  *
  * Its contents only mount on click, so a component that throws while opening

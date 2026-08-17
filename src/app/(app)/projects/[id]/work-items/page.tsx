@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { ButtonLink } from '@/components/ui/button';
 import { AhspPanel } from '@/features/work-items/ahsp-panel';
+import { WorkItemsShell } from '@/features/work-items/work-items-shell';
 import {
   WorkItemActionsBar,
   WorkItemCreateButton,
@@ -63,11 +64,9 @@ export default async function WorkItemsPage({
 
   const unitOptions = units.map((u) => ({ id: u.id, code: u.code, name: u.name }));
 
-  return (
-    <div className="flex min-h-[calc(100vh-3.5rem)]">
-      {/* Left: the work breakdown */}
-      <aside className="flex w-80 shrink-0 flex-col border-r">
-        <div className="flex items-center justify-between gap-2 border-b p-3">
+  const list = (
+    <>
+      <div className="flex items-center justify-between gap-2 border-b p-3">
           <div>
             <p className="text-sm font-semibold">Pekerjaan</p>
             <p className="text-xs text-muted-foreground">{items.length} item</p>
@@ -87,19 +86,34 @@ export default async function WorkItemsPage({
             >
               <Printer className="size-4" aria-hidden />
             </ButtonLink>
+            {/*
+              Hidden on a phone, where the floating button below does this job
+              from somewhere a thumb can actually reach.
+            */}
             {canEdit ? (
-              <WorkItemCreateButton projectId={projectId} units={unitOptions} />
+              <span className="hidden lg:inline-flex">
+                <WorkItemCreateButton projectId={projectId} units={unitOptions} />
+              </span>
             ) : null}
           </div>
         </div>
 
-        <nav aria-label="Daftar pekerjaan" className="flex-1 overflow-y-auto p-2">
+        <nav
+          aria-label="Daftar pekerjaan"
+          className="flex-1 overflow-y-auto overscroll-contain p-3 pb-24 lg:p-2 lg:pb-2"
+        >
           {items.length === 0 ? (
             <p className="px-2 py-6 text-center text-sm text-muted-foreground">
               Belum ada pekerjaan.
             </p>
           ) : (
-            <ul className="space-y-0.5">
+            /*
+              Cards on a phone, compact rows from `lg`. Same markup, different
+              density: a second list written for the small screen is a second
+              list that eventually disagrees with the first about what a work
+              item shows.
+            */
+            <ul className="space-y-2 lg:space-y-0.5">
               {items.map((workItem) => {
                 const active = selected?.id === workItem.id;
                 return (
@@ -108,9 +122,10 @@ export default async function WorkItemsPage({
                       href={`/projects/${projectId}/work-items?item=${workItem.id}`}
                       aria-current={active ? 'page' : undefined}
                       className={cn(
-                        'block rounded-md px-2 py-2 text-sm transition-colors',
+                        'block min-h-16 rounded-lg border p-3 transition-colors',
+                        'lg:min-h-0 lg:rounded-md lg:border-0 lg:px-2 lg:py-2',
                         active
-                          ? 'bg-accent text-accent-foreground'
+                          ? 'border-accent bg-accent text-accent-foreground'
                           : 'hover:bg-accent/60 hover:text-accent-foreground',
                       )}
                     >
@@ -118,16 +133,34 @@ export default async function WorkItemsPage({
                         <span className="font-mono text-xs text-muted-foreground">
                           {workItem.code}
                         </span>
-                        {workItem.lineCount === 0 ? (
-                          <Badge variant="outline" className="ml-auto text-[10px]">
-                            belum ada analisa
-                          </Badge>
+                        {workItem.groupName ? (
+                          <span className="truncate text-xs text-muted-foreground lg:hidden">
+                            · {workItem.groupName}
+                          </span>
                         ) : null}
                       </span>
+
                       <span className="mt-0.5 block font-medium">{workItem.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {formatQuantity(workItem.volume)} {workItem.unitCode}
-                        {workItem.groupName ? ` · ${workItem.groupName}` : ''}
+
+                      {/*
+                        Volume, unit and the state of the analysis: the three
+                        things worth knowing before deciding to open an item.
+                      */}
+                      <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                        <span className="font-mono tabular-nums">
+                          {formatQuantity(workItem.volume)} {workItem.unitCode}
+                        </span>
+                        <span className="hidden lg:inline">
+                          {workItem.groupName ? `· ${workItem.groupName}` : ''}
+                        </span>
+                        <Badge
+                          variant={workItem.lineCount === 0 ? 'outline' : 'secondary'}
+                          className="text-[10px]"
+                        >
+                          {workItem.lineCount === 0
+                            ? 'belum ada analisa'
+                            : `${workItem.lineCount} baris analisa`}
+                        </Badge>
                       </span>
                     </Link>
                   </li>
@@ -136,11 +169,16 @@ export default async function WorkItemsPage({
             </ul>
           )}
         </nav>
-      </aside>
 
-      {/* Right: the analysis of the selected item */}
-      <main className="min-w-0 flex-1 overflow-x-auto p-6">
-        {selected === null || estimate === null ? (
+        {/* Within reach, and it does not scroll away with the list. */}
+        {canEdit ? (
+          <WorkItemCreateButton projectId={projectId} units={unitOptions} variant="fab" />
+        ) : null}
+    </>
+  );
+
+  const detail =
+    selected === null || estimate === null ? (
           <EmptyState
             icon={items.length === 0 ? Hammer : MousePointerClick}
             title={items.length === 0 ? 'Belum ada pekerjaan' : 'Pilih sebuah pekerjaan'}
@@ -219,8 +257,20 @@ export default async function WorkItemsPage({
               </p>
             ) : null}
           </div>
-        )}
-      </main>
-    </div>
+        );
+
+  return (
+    <WorkItemsShell
+      list={list}
+      detail={detail}
+      /*
+       * Open only when the URL names an item. The page still defaults to the
+       * first item so the desktop panel is never empty, but a phone arriving
+       * at the list should see the list.
+       */
+      detailOpen={requestedItem !== undefined && selected !== null}
+      detailTitle={selected ? `${selected.code} — ${selected.name}` : 'Analisa'}
+      closeHref={`/projects/${projectId}/work-items`}
+    />
   );
 }

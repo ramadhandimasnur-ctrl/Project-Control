@@ -38,18 +38,38 @@ export type TemplateOption = {
   lineCount: number;
 };
 
+/**
+ * `variant="fab"` is the same action, placed where a thumb can reach it.
+ *
+ * On a phone the top-right corner of a scrolling list is the hardest part of
+ * the screen to touch one-handed, and it scrolls away besides. The floating
+ * button stays put above the list and within reach; the inline button is what
+ * a mouse expects on a wide screen. Both open the same dialog — the only thing
+ * that differs is where the finger has to go.
+ */
 export function WorkItemCreateButton({
   projectId,
   units,
-}: { projectId: string } & Lists) {
+  variant = 'inline',
+}: { projectId: string; variant?: 'inline' | 'fab' } & Lists) {
   const [open, setOpen] = useState(false);
 
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)}>
-        <Plus className="size-4" aria-hidden />
-        Tambah pekerjaan
-      </Button>
+      {variant === 'fab' ? (
+        <Button
+          aria-label="Tambah pekerjaan"
+          className="fixed bottom-5 right-5 z-30 size-14 rounded-full shadow-lg lg:hidden"
+          onClick={() => setOpen(true)}
+        >
+          <Plus className="size-6" aria-hidden />
+        </Button>
+      ) : (
+        <Button size="sm" onClick={() => setOpen(true)}>
+          <Plus className="size-4" aria-hidden />
+          Tambah pekerjaan
+        </Button>
+      )}
       {open ? (
         <WorkItemDialog
           open
