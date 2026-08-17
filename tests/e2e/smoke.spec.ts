@@ -157,7 +157,7 @@ test('menu proyek dapat dibuka dari layar ponsel', async ({ page }) => {
   // The sidebar really is gone at this width; the drawer is the only way in.
   await expect(page.getByRole('navigation', { name: 'Navigasi proyek' })).toBeHidden();
 
-  await page.getByRole('button', { name: 'Buka menu navigasi' }).click();
+  await page.getByRole('button', { name: 'Buka menu proyek' }).click();
 
   const drawer = page.getByRole('navigation', { name: 'Navigasi proyek' });
   await expect(drawer).toBeVisible();
