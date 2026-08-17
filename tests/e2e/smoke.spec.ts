@@ -20,12 +20,39 @@ test.skip(
   'SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD belum diisi; jalankan npm run db:seed terlebih dahulu.',
 );
 
+/**
+ * Signs in, and says why if it cannot.
+ *
+ * `SEED_ADMIN_PASSWORD` is a fixture that a human can legitimately invalidate
+ * from inside the running application — the account menu now offers "Ganti kata
+ * sandi", and an administrator may deactivate an account from the user panel.
+ * When that happens the whole suite fails, and it used to fail on a bare
+ * `waitForURL` timeout that says nothing about the cause. Reading the refusal
+ * off the page turns half an hour of confusion into one line.
+ */
 async function signIn(page: Page): Promise<void> {
   await page.goto('/login');
   await page.getByLabel(/email/i).fill(EMAIL!);
   await page.getByLabel(/kata sandi|password/i).fill(PASSWORD!);
   await page.getByRole('button', { name: /masuk|login/i }).click();
-  await page.waitForURL(/\/projects/, { timeout: 30_000 });
+
+  // Filtered to alerts that actually say something: the toast region is also
+  // `role="alert"` and is present and empty on every page.
+  const refusal = page.getByRole('alert').filter({ hasText: /\S/ }).first();
+  const landed = page.waitForURL(/\/projects/, { timeout: 30_000 });
+
+  await Promise.race([
+    landed,
+    refusal.waitFor({ timeout: 30_000 }).then(async () => {
+      throw new Error(
+        `Gagal masuk sebagai ${EMAIL}: "${(await refusal.textContent())?.trim()}". ` +
+          'Kredensial di .env.local kemungkinan sudah tidak sesuai dengan keadaan akun — ' +
+          'kata sandi dapat diganti dari dalam aplikasi, dan akun dapat dinonaktifkan lewat panel Pengguna.',
+      );
+    }),
+  ]);
+
+  await landed;
 }
 
 /** Opens the first project and returns its id. */
@@ -112,6 +139,36 @@ test('setiap modul proyek terbuka tanpa error', async ({ page }) => {
     expect(errors, `${path} melempar error di peramban`).toEqual([]);
     page.removeAllListeners('pageerror');
   }
+});
+
+/*
+ * The project menu on a phone.
+ *
+ * The sidebar is `hidden lg:block`, which on a narrow screen does not mean
+ * collapsed — it means absent. Every page inside a project was unreachable
+ * from the device the site team actually carries, and no desktop-width test
+ * could have noticed.
+ */
+test('menu proyek dapat dibuka dari layar ponsel', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page);
+  const id = await openFirstProject(page);
+
+  // The sidebar really is gone at this width; the drawer is the only way in.
+  await expect(page.getByRole('navigation', { name: 'Navigasi proyek' })).toBeHidden();
+
+  await page.getByRole('button', { name: 'Buka menu navigasi' }).click();
+
+  const drawer = page.getByRole('navigation', { name: 'Navigasi proyek' });
+  await expect(drawer).toBeVisible();
+
+  // Follow a link that only exists in the project menu, and land on it.
+  await drawer.getByRole('link', { name: 'RAB' }).click();
+  await page.waitForURL(new RegExp(`/projects/${id}/estimate/rab`), { timeout: 30_000 });
+
+  // Navigating closes the drawer; leaving it open reads as a tap that did
+  // nothing, because the page behind it has already changed.
+  await expect(drawer).toBeHidden();
 });
 
 /*

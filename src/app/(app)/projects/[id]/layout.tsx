@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 
 import { Badge } from '@/components/ui/badge';
+import { ProjectNavRegistrar } from '@/features/navigation/mobile-nav';
 import { ProjectSidebar } from '@/features/projects/project-sidebar';
 import { PROJECT_ROLE_LABELS } from '@/lib/auth/roles';
 import { isAppError } from '@/lib/errors';
@@ -28,6 +29,17 @@ export default async function ProjectLayout({
 
   return (
     <div className="flex min-h-[calc(100vh-3.5rem)]">
+      {/*
+        Tells the header's drawer which project it is inside, so the one
+        hamburger up there opens this menu on a phone. Renders nothing.
+      */}
+      <ProjectNavRegistrar
+        id={project.id}
+        code={project.code}
+        name={project.name}
+        role={project.role}
+      />
+
       <aside data-print="hide" className="hidden w-60 shrink-0 border-r bg-muted/20 lg:block">
         <div className="border-b p-4">
           <p className="font-mono text-xs text-muted-foreground">{project.code}</p>
