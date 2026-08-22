@@ -48,7 +48,9 @@ export async function listUsers(userId: string): Promise<UserRow[]> {
       reviewedAt: users.reviewedAt,
     })
     .from(users)
-    .where(eq(users.orgId, access.orgId))
+    // Removed accounts are gone as far as the screen is concerned; the row
+    // survives only so that older records keep the name that produced them.
+    .where(and(eq(users.orgId, access.orgId), ne(users.status, 'REMOVED')))
     .orderBy(asc(users.createdAt));
 
   return rows.map((row) => ({
@@ -354,11 +356,30 @@ export async function removeUserFromOrg(
   await withUser(actor.id, async (tx) => {
     await tx.delete(projectMembers).where(eq(projectMembers.userId, targetUserId));
 
+    /*
+     * The address is released, the row is not.
+     *
+     * A removed account has to disappear from the screen and has to stop
+     * holding its email hostage — `users_email_unique` would otherwise refuse
+     * to let the same person be invited back. Deleting the row would achieve
+     * both, and would also blank `submitted_by`, `approved_by`, `checked_by`
+     * and every `actor_id` in the audit log, because each of those is
+     * `ON DELETE SET NULL`. Progress that somebody approved would quietly stop
+     * saying who approved it, and that attribution is what a payment claim
+     * rests on.
+     *
+     * So the address is moved aside to a reserved-by-RFC domain that can never
+     * receive mail, the name stays where history refers to it, and the row is
+     * excluded from every listing. The original address is kept in the audit
+     * entry below.
+     */
     await tx
       .update(users)
       .set({
         status: 'REMOVED',
         isActive: false,
+        email: `removed+${targetUserId}@removed.invalid`,
+        username: null,
         reviewedBy: actor.id,
         reviewedAt: new Date(),
       })
@@ -369,7 +390,7 @@ export async function removeUserFromOrg(
       tableName: 'users',
       recordId: targetUserId,
       action: 'UPDATE',
-      before: { status: target.status, projectCount: memberships.length },
+      before: { status: target.status, email: target.email, projectCount: memberships.length },
       after: { status: 'REMOVED', projectCount: 0, authDeleted },
       actorId: actor.id,
     });

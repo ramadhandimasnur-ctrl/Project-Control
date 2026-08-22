@@ -434,15 +434,23 @@ function AnalysisSection({
             ) : null}
 
             <div className="hidden w-full rounded-lg border lg:block">
-              <Table className="min-w-max">
+              <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-20">Kode</TableHead>
+                    {/*
+                      Five columns, not eight.
+
+                      Code, unit and waste each had a column of their own, and
+                      together they pushed Harga and Jumlah off the right edge —
+                      the two figures the sheet exists to show. Each has been
+                      folded into the column it qualifies: the code above the
+                      name, the unit after the quantity, the waste beside the
+                      coefficient it multiplies. Nothing is lost, and the money
+                      is on screen without reaching for a scrollbar.
+                    */}
                     <TableHead className="min-w-48">Uraian</TableHead>
-                    <TableHead className="w-16">Sat</TableHead>
-                    <TableHead className="w-24 text-right">Koef</TableHead>
-                    <TableHead className="w-20 text-right">Susut</TableHead>
-                    <TableHead className="w-28 text-right">Kebutuhan</TableHead>
+                    <TableHead className="w-28 text-right">Koef</TableHead>
+                    <TableHead className="w-32 text-right">Kebutuhan</TableHead>
                     {showCosts ? <TableHead className="w-32 text-right">Harga</TableHead> : null}
                     {showCosts ? <TableHead className="w-36 text-right">Jumlah</TableHead> : null}
                     {canEdit ? <TableHead className="w-10" /> : null}
@@ -455,8 +463,10 @@ function AnalysisSection({
                       className={canEdit ? 'cursor-pointer' : undefined}
                       onClick={canEdit ? () => onEdit(line) : undefined}
                     >
-                      <TableCell className="font-mono text-xs">{line.resourceCode}</TableCell>
                       <TableCell>
+                        <span className="block font-mono text-xs text-muted-foreground">
+                          {line.resourceCode}
+                        </span>
                         {line.resourceName}
                         {line.resourceSpec ? (
                           <span className="block text-xs text-muted-foreground">
@@ -464,17 +474,18 @@ function AnalysisSection({
                           </span>
                         ) : null}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{line.unitCode}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">
                         {formatCoefficient(line.coef)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
-                        {Number(line.wasteFactor) === 0
-                          ? EMPTY_VALUE
-                          : formatPercent(line.wasteFactor, 1)}
+                        {/* The waste sits with the coefficient it multiplies. */}
+                        {Number(line.wasteFactor) === 0 ? null : (
+                          <span className="block text-xs text-muted-foreground">
+                            susut {formatPercent(line.wasteFactor, 1)}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right font-mono tabular-nums">
                         {formatQuantity(line.qty)}
+                        <span className="ml-1 text-xs text-muted-foreground">{line.unitCode}</span>
                       </TableCell>
                       {showCosts ? (
                         <TableCell className="text-right font-mono tabular-nums">
@@ -522,7 +533,7 @@ function AnalysisSection({
                 {showCosts ? (
                   <TableFooter>
                     <TableRow>
-                      <TableCell colSpan={6}>Jumlah {AHSP_ROLE_LABELS[role]}</TableCell>
+                      <TableCell colSpan={3}>Jumlah {AHSP_ROLE_LABELS[role]}</TableCell>
                       <TableCell />
                       <TableCell className="text-right font-mono font-medium tabular-nums">
                         {formatCurrency(subtotals[role])}

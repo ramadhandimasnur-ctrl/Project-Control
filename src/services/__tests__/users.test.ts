@@ -256,6 +256,37 @@ describe.skipIf(!ready)('Persetujuan pengguna', () => {
       expect(row?.full_name).toBe('Anggota Uji');
     });
 
+    /*
+     * Two things the screen and the invite flow each depend on.
+     *
+     * `users_email_unique` means a removed account holds its address for ever
+     * unless the address is moved aside — so inviting the same person back
+     * would fail on a row nobody can see. And the row must drop out of the
+     * listing, or removal looks like it did nothing.
+     */
+    it('melepaskan alamat email agar orangnya dapat diundang kembali', async () => {
+      const [before] = await sql<{ email: string }[]>`
+        SELECT email FROM users WHERE id = ${memberId}
+      `;
+
+      await service.removeUserFromOrg(admin, memberId);
+
+      const [after] = await sql<{ email: string }[]>`
+        SELECT email FROM users WHERE id = ${memberId}
+      `;
+      expect(after?.email).not.toBe(before?.email);
+      // A reserved TLD: it can never receive mail, by RFC rather than by luck.
+      expect(after?.email).toMatch(/@removed.invalid$/);
+    });
+
+    it('tidak lagi muncul di daftar pengguna', async () => {
+      expect((await service.listUsers(admin.id)).map((u) => u.id)).toContain(memberId);
+
+      await service.removeUserFromOrg(admin, memberId);
+
+      expect((await service.listUsers(admin.id)).map((u) => u.id)).not.toContain(memberId);
+    });
+
     it('menolak mengeluarkan akun yang sudah dikeluarkan', async () => {
       await service.removeUserFromOrg(admin, memberId);
       await expect(service.removeUserFromOrg(admin, memberId)).rejects.toThrow(
