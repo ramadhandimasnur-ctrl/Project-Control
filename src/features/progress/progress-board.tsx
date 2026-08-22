@@ -203,10 +203,18 @@ export function ProgressBoardView({
               <TableHead className="w-28">Status</TableHead>
               {board.requireChecklist ? <TableHead className="w-24">Mutu</TableHead> : null}
               {/*
-                Wide enough for the busiest row a draft entry produces —
-                Perbaiki, Batalkan, Mutu, Ajukan and the delete icon together.
+                Sized to the buttons it actually holds, rather than to the worst
+                case.
+
+                It used to reserve 26rem for the busiest row a draft can
+                produce — Perbaiki, Batalkan, Mutu, Ajukan and the delete icon
+                together. But most rows carry two buttons, and those were pushed
+                to the far right of a column two thirds empty, a hand's width
+                away from the Mutu column they belong beside. `w-0` asks for
+                nothing; auto table layout still gives the column what its widest
+                row needs, and the slack goes to Uraian, which can use it.
               */}
-              <TableHead className="w-[26rem]" />
+              <TableHead className="w-0" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -318,10 +326,16 @@ export function ProgressBoardView({
                       `w-max` rather than a plain flex row: flex children may
                       shrink below their own content, and the buttons were
                       losing their labels a few pixels at a time before anything
-                      looked wide enough to scroll. Sized to its content and
-                      pushed right, the group either fits or the table scrolls.
+                      looked wide enough to scroll.
+
+                      Aligned left, not right. The column is as wide as the
+                      busiest row in the table, so right-aligning left every
+                      quieter row's buttons stranded at the far edge — a hand's
+                      width of blank table between Mutu and Catat, which is how
+                      it was reported. Starting them all at the same left edge
+                      keeps them beside the figures they act on.
                     */}
-                    <div className="ml-auto flex w-max items-center justify-end gap-1.5 whitespace-nowrap">
+                    <div className="flex w-max items-center gap-1.5 whitespace-nowrap">
                       {/*
                         A milestone item is never given a percentage box: its
                         figure is derived from the stages, and typing over it

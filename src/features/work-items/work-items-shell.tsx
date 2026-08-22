@@ -40,28 +40,41 @@ export function WorkItemsShell({
 
   return (
     /*
-      Fixed height from `lg`, not merely a minimum.
+      Fills the frame the project layout sets, and divides it in two.
 
-      The list column was written to scroll on its own — its `nav` carries
-      `flex-1 overflow-y-auto` — but with only a `min-height` the row grows to
-      whatever the analysis needs, so neither column ever scrolls and the whole
-      page does instead. On a long analysis that drags the table's own
-      horizontal scrollbar to the bottom of a very tall page, which is where it
-      was found: unreachable without scrolling past everything.
+      `h-full` rather than a viewport calculation of its own: the height to
+      match is the content column's, and the layout has already worked that out.
+      Repeating `100vh - 3.5rem` here arrived at the same number by coincidence,
+      and would drift apart the moment anything above this changed.
 
-      Phones keep the page scroll. Trapping a thumb inside a column is worse
-      than a long page, and the analysis is a sheet there anyway.
+      Each column then scrolls within its own bounds, so the list stays beside
+      the analysis it belongs to, and the analysis table keeps its horizontal
+      scrollbar in sight rather than at the foot of a very tall page.
+
+      Below `lg` the page scrolls. The analysis is a sheet there anyway.
     */
-    <div className="flex min-h-[calc(100vh-3.5rem)] lg:h-[calc(100vh-3.5rem)] lg:min-h-0 lg:overflow-hidden">
-      {/*
-        Full width on a phone, a fixed column beside the analysis from `lg`.
-      */}
-      <aside className="flex w-full shrink-0 flex-col border-r lg:w-80 lg:overflow-hidden">
+    <div
+      data-print="frame"
+      className="flex min-h-[calc(100vh-3.5rem)] lg:h-full lg:min-h-0 lg:overflow-hidden"
+    >
+      {/* Full width on a phone, a fixed column beside the analysis from `lg`. */}
+      <aside
+        data-print="frame"
+        className="flex w-full shrink-0 flex-col border-r lg:w-80 lg:min-h-0 lg:overflow-hidden"
+      >
         {list}
       </aside>
 
-      {/* Scrolls on its own, so the analysis stays beside the list it belongs to. */}
-      <main className="hidden min-w-0 flex-1 p-6 lg:block lg:overflow-auto lg:overscroll-contain">
+      {/*
+        `overflow-y` only. `overflow-auto` covers both axes, which made this a
+        horizontal scroll container as well — so a wide analysis table could be
+        pushed sideways both from here and from inside the table itself: two
+        handles on the same thing, disagreeing about how far it had moved.
+      */}
+      <main
+        data-print="frame"
+        className="hidden min-w-0 flex-1 p-6 lg:block lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain"
+      >
         {detail}
       </main>
 

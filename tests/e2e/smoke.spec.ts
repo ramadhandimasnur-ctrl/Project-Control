@@ -535,42 +535,94 @@ test('laporan tak dikenal ditolak, bukan dirender kosong', async ({ page }) => {
 });
 
 /*
- * The analysis column scrolls itself on a wide screen.
+ * One scrollbar per column on a wide screen, and none on the page.
  *
- * The list was written to scroll independently, but the row around it only had
- * a minimum height, so it grew to whatever the analysis needed and the page
- * scrolled instead. On a long analysis that puts the table's own horizontal
- * scrollbar at the bottom of a very tall page — reachable only by scrolling
- * past everything, which is how it was reported.
+ * The project menu is taller than most screens, so the page itself scrolled;
+ * the analysis panel scrolled too. Two scroll containers then competed for the
+ * same wheel, and because the panel holds its overscroll, reaching the panel's
+ * end simply stopped everything — the page plainly continued below and would
+ * not move. That is what "cannot scroll down" meant.
+ *
+ * Measured rather than eyeballed: the page must have nothing to scroll, and
+ * the panel must reach its own end with the last of the analysis on screen.
  */
-test('panel analisa menggulir sendiri di layar desktop', async ({ page }) => {
+test('layar desktop: halaman tidak menggulir, tiap kolom menggulir sendiri', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await signIn(page);
   const id = await openFirstProject(page);
   await page.goto(`/projects/${id}/work-items`);
+  await expect(page.getByRole('navigation', { name: 'Daftar pekerjaan' })).toBeVisible();
 
+  const pageScrolls = await page.evaluate(
+    () => document.documentElement.scrollHeight > window.innerHeight + 1,
+  );
+  expect(pageScrolls, 'halaman masih punya penggulir sendiri').toBe(false);
+
+  // The project menu carries its own scrollbar instead of dragging the page.
+  const menuReachesEnd = await page.evaluate(() => {
+    const nav = document.querySelector('[aria-label="Navigasi proyek"]');
+    const box = nav?.closest('div');
+    if (!box) return null;
+    const last = nav!.querySelectorAll('a');
+    const target = last[last.length - 1];
+    if (!target) return null;
+    box.scrollTop = box.scrollHeight;
+    const r = target.getBoundingClientRect();
+    return r.bottom <= window.innerHeight + 1 && r.top >= 0;
+  });
+  expect(menuReachesEnd, 'menu terakhir tidak terjangkau tanpa menggulir halaman').not.toBe(false);
+
+  /*
+   * The panel reaches its own end. Asserted through the last child rather than
+   * through scrollTop alone: a container can report a scroll position it never
+   * actually shows, and what was reported here was content that stayed out of
+   * reach, not a number that failed to change.
+   */
   const panel = page.locator('main').last();
-  await expect(panel).toBeVisible();
-
-  const box = await panel.evaluate((node) => {
+  const reachedEnd = await panel.evaluate((node) => {
     const el = node as HTMLElement;
-    return { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight };
+    if (el.scrollHeight <= el.clientHeight + 1) return 'nothing to scroll';
+    el.scrollTop = el.scrollHeight;
+    const last = el.lastElementChild?.lastElementChild;
+    if (!last) return 'no content';
+    const r = last.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    return r.bottom <= box.bottom + 1 ? 'ok' : `tertinggal ${Math.round(r.bottom - box.bottom)}px`;
+  });
+  expect(reachedEnd, 'ujung analisa tidak terjangkau').toMatch(/^(ok|nothing to scroll)$/);
+
+  // And the page still has not moved after all that scrolling.
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+});
+
+/*
+ * The action buttons sit beside the figures they act on.
+ *
+ * The column reserved 26rem for the busiest row a draft can produce, and every
+ * quieter row had its two buttons pushed to the far right of it — a hand's
+ * width of blank table between "Mutu" and "Catat". The reserved width is gone
+ * and the group is aligned left, so the distance is now the cell padding.
+ */
+test('tombol aksi tabel progres tidak terpisah jauh dari kolomnya', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page);
+  const id = await openFirstProject(page);
+  await page.goto(`/projects/${id}/progress`);
+
+  const gap = await page.evaluate(() => {
+    const table = document.querySelector('table');
+    const row = table?.querySelector('tbody tr');
+    const cells = row ? [...row.querySelectorAll('td')] : [];
+    const actions = cells[cells.length - 1]?.firstElementChild;
+    const previous = cells[cells.length - 2];
+    if (!actions || !previous) return null;
+    return Math.round(actions.getBoundingClientRect().left - previous.getBoundingClientRect().right);
   });
 
-  if (box.scrollHeight <= box.clientHeight + 1) {
-    test.skip(true, 'analisa proyek ini lebih pendek dari layar; tidak ada yang digulir');
+  if (gap === null) {
+    test.skip(true, 'proyek ini belum punya baris progres');
     return;
   }
-
-  // The page itself stays put while the panel moves.
-  const pageScrollBefore = await page.evaluate(() => window.scrollY);
-  await panel.evaluate((node) => {
-    (node as HTMLElement).scrollTop = 400;
-  });
-  await page.waitForTimeout(150);
-
-  expect(await panel.evaluate((node) => (node as HTMLElement).scrollTop)).toBeGreaterThan(0);
-  expect(await page.evaluate(() => window.scrollY), 'halaman ikut bergeser').toBe(
-    pageScrollBefore,
-  );
+  // Cell padding, not a reserved column: anything near 100px is the old bug.
+  expect(gap, `jarak tombol aksi ${gap}px`).toBeLessThan(48);
 });

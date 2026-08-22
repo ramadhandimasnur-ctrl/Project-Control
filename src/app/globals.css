@@ -150,6 +150,21 @@
   }
 
   /*
+   * On screen the project area is a frame the size of the viewport, and its
+   * columns scroll inside it. Paper has no viewport to fit, and a scroll
+   * container prints only what fits in its own height — a twenty-page AHSP
+   * would come out as a single sheet with the rest silently missing. Releasing
+   * the height and the clipping is all that is needed: the content is already
+   * there, merely not shown.
+   */
+  [data-print='frame'] {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  /*
    * Paper is white, whatever the screen was.
    *
    * The dark theme swaps these tokens on `.dark`, and print-color-adjust below
