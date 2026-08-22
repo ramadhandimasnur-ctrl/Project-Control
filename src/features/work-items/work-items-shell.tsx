@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { useIsCompactScreen } from '@/lib/use-media-query';
 
 /**
  * Master and detail, arranged differently for the screen it is on.
@@ -37,6 +38,21 @@ export function WorkItemsShell({
   closeHref: string;
 }) {
   const router = useRouter();
+
+  /*
+   * The sheet is a phone arrangement, and it has to be *closed* on a wide
+   * screen — not merely invisible.
+   *
+   * `lg:hidden` hides the backdrop and the panel. It does nothing about the
+   * rest of what an open modal does: Base UI marks the page `aria-hidden`,
+   * locks body scroll, and lays a fixed blocking element over the viewport. On
+   * a desktop that overlay sat on top of the analysis column, so selecting any
+   * work item other than the default one left the analysis unscrollable —
+   * every wheel event landed on an invisible sheet instead. The first item was
+   * spared only because it is the default and carries no `?item=`, which is
+   * what made the fault look like it belonged to the list.
+   */
+  const compact = useIsCompactScreen();
 
   return (
     /*
@@ -83,7 +99,7 @@ export function WorkItemsShell({
         arriving at the page does not open a panel nobody asked for.
       */}
       <DialogPrimitive.Root
-        open={detailOpen}
+        open={detailOpen && compact}
         onOpenChange={(open) => {
           if (!open) router.push(closeHref, { scroll: false });
         }}

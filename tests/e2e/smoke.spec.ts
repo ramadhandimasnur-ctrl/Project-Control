@@ -626,3 +626,58 @@ test('tombol aksi tabel progres tidak terpisah jauh dari kolomnya', async ({ pag
   // Cell padding, not a reserved column: anything near 100px is the old bug.
   expect(gap, `jarak tombol aksi ${gap}px`).toBeLessThan(48);
 });
+
+/*
+ * Selecting a work item must not put a modal over the desktop layout.
+ *
+ * The sheet is styled `lg:hidden`, which hides its backdrop and its panel and
+ * nothing else. An open dialog also marks the page `aria-hidden`, locks body
+ * scroll and lays a fixed blocking element across the viewport — none of which
+ * a breakpoint suppresses. So on a wide screen, choosing any item other than
+ * the default one left the analysis unscrollable, because every wheel event
+ * landed on an invisible sheet.
+ *
+ * The first item hid the fault: it is the default selection and carries no
+ * `?item=`, so the dialog stayed shut and that one item behaved.
+ */
+test('memilih pekerjaan kedua tidak memasang modal di layar desktop', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signIn(page);
+  const id = await openFirstProject(page);
+  await page.goto(`/projects/${id}/work-items`);
+
+  const items = page.getByRole('navigation', { name: 'Daftar pekerjaan' }).getByRole('link');
+  if ((await items.count()) < 2) {
+    test.skip(true, 'butuh minimal dua pekerjaan');
+    return;
+  }
+
+  // The second item — the one that puts `?item=` in the URL and used to open
+  // the sheet behind the desktop layout.
+  await items.nth(1).click();
+  await page.waitForURL(/\?item=/, { timeout: 30_000 });
+
+  const state = await page.evaluate(() => {
+    const panel = document.querySelector('main:last-of-type') as HTMLElement | null;
+    const box = panel?.getBoundingClientRect();
+    const centre =
+      panel && box
+        ? (document.elementsFromPoint(box.left + box.width / 2, box.top + box.height / 2)[0] ?? null)
+        : null;
+    return {
+      // Base UI's blocking overlay carries both of these; our own backdrop
+      // is a plain div and never does.
+      blockingOverlay: document.querySelector('[data-base-ui-inert][role]') !== null,
+      pageHidden: document.querySelector('body > div[aria-hidden="true"]') !== null,
+      bodyLocked: getComputedStyle(document.body).overflow === 'hidden',
+      // Whatever a wheel would land on must belong to the analysis, not to a
+      // sheet lying invisibly on top of it.
+      centreInsidePanel: panel !== null && centre !== null && panel.contains(centre),
+    };
+  });
+
+  expect(state.blockingOverlay, 'lembar ponsel terbuka di layar desktop').toBe(false);
+  expect(state.pageHidden, 'halaman ditandai aria-hidden').toBe(false);
+  expect(state.bodyLocked, 'guliran halaman dikunci').toBe(false);
+  expect(state.centreInsidePanel, 'ada yang menutupi panel analisa').toBe(true);
+});
