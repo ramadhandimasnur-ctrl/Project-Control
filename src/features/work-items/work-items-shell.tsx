@@ -39,14 +39,31 @@ export function WorkItemsShell({
   const router = useRouter();
 
   return (
-    <div className="flex min-h-[calc(100vh-3.5rem)]">
+    /*
+      Fixed height from `lg`, not merely a minimum.
+
+      The list column was written to scroll on its own — its `nav` carries
+      `flex-1 overflow-y-auto` — but with only a `min-height` the row grows to
+      whatever the analysis needs, so neither column ever scrolls and the whole
+      page does instead. On a long analysis that drags the table's own
+      horizontal scrollbar to the bottom of a very tall page, which is where it
+      was found: unreachable without scrolling past everything.
+
+      Phones keep the page scroll. Trapping a thumb inside a column is worse
+      than a long page, and the analysis is a sheet there anyway.
+    */
+    <div className="flex min-h-[calc(100vh-3.5rem)] lg:h-[calc(100vh-3.5rem)] lg:min-h-0 lg:overflow-hidden">
       {/*
         Full width on a phone, a fixed column beside the analysis from `lg`.
       */}
-      <aside className="flex w-full shrink-0 flex-col border-r lg:w-80">{list}</aside>
+      <aside className="flex w-full shrink-0 flex-col border-r lg:w-80 lg:overflow-hidden">
+        {list}
+      </aside>
 
-      {/* The side-by-side analysis, desktop only. */}
-      <main className="hidden min-w-0 flex-1 overflow-x-auto p-6 lg:block">{detail}</main>
+      {/* Scrolls on its own, so the analysis stays beside the list it belongs to. */}
+      <main className="hidden min-w-0 flex-1 p-6 lg:block lg:overflow-auto lg:overscroll-contain">
+        {detail}
+      </main>
 
       {/*
         The same analysis, as a sheet. Rendered only when an item is named, so

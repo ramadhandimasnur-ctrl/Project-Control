@@ -533,3 +533,44 @@ test('laporan tak dikenal ditolak, bukan dirender kosong', async ({ page }) => {
   const response = await page.request.get(`/projects/${id}/exports/tidak-ada`);
   expect(response.status()).toBe(404);
 });
+
+/*
+ * The analysis column scrolls itself on a wide screen.
+ *
+ * The list was written to scroll independently, but the row around it only had
+ * a minimum height, so it grew to whatever the analysis needed and the page
+ * scrolled instead. On a long analysis that puts the table's own horizontal
+ * scrollbar at the bottom of a very tall page — reachable only by scrolling
+ * past everything, which is how it was reported.
+ */
+test('panel analisa menggulir sendiri di layar desktop', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signIn(page);
+  const id = await openFirstProject(page);
+  await page.goto(`/projects/${id}/work-items`);
+
+  const panel = page.locator('main').last();
+  await expect(panel).toBeVisible();
+
+  const box = await panel.evaluate((node) => {
+    const el = node as HTMLElement;
+    return { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight };
+  });
+
+  if (box.scrollHeight <= box.clientHeight + 1) {
+    test.skip(true, 'analisa proyek ini lebih pendek dari layar; tidak ada yang digulir');
+    return;
+  }
+
+  // The page itself stays put while the panel moves.
+  const pageScrollBefore = await page.evaluate(() => window.scrollY);
+  await panel.evaluate((node) => {
+    (node as HTMLElement).scrollTop = 400;
+  });
+  await page.waitForTimeout(150);
+
+  expect(await panel.evaluate((node) => (node as HTMLElement).scrollTop)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.scrollY), 'halaman ikut bergeser').toBe(
+    pageScrollBefore,
+  );
+});
