@@ -99,37 +99,44 @@ export async function listResources(
 
   const where = and(...filters);
 
-  const [totalRow] = await db.select({ value: count() }).from(resources).where(where);
+  /*
+   * The count, the page of rows, and the cost permission do not depend on one
+   * another, so they are asked for together. Awaited in turn they cost three
+   * round trips instead of one — invisible against a local database and the
+   * better part of half a second against a remote one.
+   */
+  const [[totalRow], rows, showCosts] = await Promise.all([
+    db.select({ value: count() }).from(resources).where(where),
+    db
+      .select({
+        id: resources.id,
+        code: resources.code,
+        name: resources.name,
+        spec: resources.spec,
+        type: resources.type,
+        isActive: resources.isActive,
+        unitCode: units.code,
+        categoryName: resourceCategories.name,
+        unitId: resources.unitId,
+        categoryId: resources.categoryId,
+        leadTimeDays: resources.leadTimeDays,
+        notes: resources.notes,
+        priceMarkupPercent: resources.priceMarkupPercent,
+      })
+      .from(resources)
+      .innerJoin(units, eq(units.id, resources.unitId))
+      .leftJoin(resourceCategories, eq(resourceCategories.id, resources.categoryId))
+      .where(where)
+      .orderBy(asc(resources.code))
+      .limit(limit)
+      .offset(offset),
+    // Charter rule 7: a user who may not see costs never receives them, rather
+    // than receiving them and having the column hidden in the browser.
+    // `showCosts` is returned rather than inferred by the caller: a catalogue
+    // that simply has no prices yet must not look like a permission denial.
+    canViewOrgCosts(userId),
+  ]);
 
-  const rows = await db
-    .select({
-      id: resources.id,
-      code: resources.code,
-      name: resources.name,
-      spec: resources.spec,
-      type: resources.type,
-      isActive: resources.isActive,
-      unitCode: units.code,
-      categoryName: resourceCategories.name,
-      unitId: resources.unitId,
-      categoryId: resources.categoryId,
-      leadTimeDays: resources.leadTimeDays,
-      notes: resources.notes,
-      priceMarkupPercent: resources.priceMarkupPercent,
-    })
-    .from(resources)
-    .innerJoin(units, eq(units.id, resources.unitId))
-    .leftJoin(resourceCategories, eq(resourceCategories.id, resources.categoryId))
-    .where(where)
-    .orderBy(asc(resources.code))
-    .limit(limit)
-    .offset(offset);
-
-  // Charter rule 7: a user who may not see costs never receives them, rather
-  // than receiving them and having the column hidden in the browser.
-  // `showCosts` is returned rather than inferred by the caller: a catalogue
-  // that simply has no prices yet must not look like a permission denial.
-  const showCosts = await canViewOrgCosts(userId);
   if (!showCosts) {
     return {
       showCosts,

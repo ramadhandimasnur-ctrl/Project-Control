@@ -11,6 +11,7 @@ import { assertOrgAccess } from './org-access';
 import { writeAuditLog } from './audit';
 import { type SessionUser } from './session';
 
+import { cachedByOrg } from '@/lib/cache';
 export type UnitDimension =
   | 'LENGTH'
   | 'AREA'
@@ -42,7 +43,11 @@ export type UnitRow = {
 
 export async function listUnits(userId: string): Promise<UnitRow[]> {
   const access = await assertOrgAccess(userId);
+  // Authorisation is re-checked above on every call; only the rows are cached.
+  return cachedByOrg('units', access.orgId, () => loadUnits(access.orgId));
+}
 
+async function loadUnits(orgId: string): Promise<UnitRow[]> {
   const usage = db.$with('unit_usage').as(
     db
       .select({ unitId: resources.unitId, total: count().as('total') })
@@ -63,7 +68,7 @@ export async function listUnits(userId: string): Promise<UnitRow[]> {
     })
     .from(units)
     .leftJoin(usage, eq(usage.unitId, units.id))
-    .where(eq(units.orgId, access.orgId))
+    .where(eq(units.orgId, orgId))
     .orderBy(asc(units.code));
 
   return rows.map((r) => ({ ...r, usageCount: r.usageCount ?? 0 }));

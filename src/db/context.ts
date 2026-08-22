@@ -24,8 +24,20 @@ export async function withUser<T>(
   fn: (tx: Transaction) => Promise<T>,
 ): Promise<T> {
   return db.transaction(async (tx) => {
-    await tx.execute(sql`SET LOCAL ROLE app_runtime`);
-    await tx.execute(sql`SELECT set_config('app.current_user_id', ${userId}, true)`);
+    /*
+     * Both settings in one statement, deliberately.
+     *
+     * `SET LOCAL ROLE x` is `set_config('role', 'x', true)` written another
+     * way, so nothing about the guarantee changes — but sent as two statements
+     * they cost two round trips, and every RLS-guarded read in the application
+     * pays them. Against a database in another region that was the largest
+     * single expense in a page render. Order is unchanged: the role drops
+     * first, the identity is set second.
+     */
+    await tx.execute(
+      sql`SELECT set_config('role', 'app_runtime', true),
+                 set_config('app.current_user_id', ${userId}, true)`,
+    );
     return fn(tx);
   });
 }

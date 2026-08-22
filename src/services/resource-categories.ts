@@ -13,6 +13,7 @@ import { writeAuditLog } from './audit';
 import { type ResourceType } from './resources';
 import { type SessionUser } from './session';
 
+import { cachedByOrg } from '@/lib/cache';
 export type CategoryRow = {
   id: string;
   code: string;
@@ -29,7 +30,11 @@ export { buildCategoryTree };
 
 export async function listCategories(userId: string): Promise<CategoryRow[]> {
   const access = await assertOrgAccess(userId);
+  // Authorisation is re-checked above on every call; only the rows are cached.
+  return cachedByOrg('categories', access.orgId, () => loadCategories(access.orgId));
+}
 
+async function loadCategories(orgId: string): Promise<CategoryRow[]> {
   const usage = db.$with('category_usage').as(
     db
       .select({ categoryId: resources.categoryId, total: count().as('total') })
@@ -49,7 +54,7 @@ export async function listCategories(userId: string): Promise<CategoryRow[]> {
     })
     .from(resourceCategories)
     .leftJoin(usage, eq(usage.categoryId, resourceCategories.id))
-    .where(eq(resourceCategories.orgId, access.orgId))
+    .where(eq(resourceCategories.orgId, orgId))
     .orderBy(asc(resourceCategories.code));
 
   return rows.map((r) => ({ ...r, resourceCount: r.resourceCount ?? 0 }));

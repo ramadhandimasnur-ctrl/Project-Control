@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 
 import { toUserMessage } from '@/lib/errors';
 import { warehouseFormSchema } from '@/lib/validation/inventory';
@@ -16,6 +16,7 @@ import {
 } from '@/services/purchases';
 import { requireSessionUser } from '@/services/session';
 import { deleteWarehouse, saveWarehouse } from '@/services/warehouses';
+import { MASTER_DATA_TAG } from '@/lib/cache';
 
 export type ActionResult =
   | { ok: true }
@@ -30,6 +31,13 @@ function revalidateLogistics(projectId: string): void {
   revalidatePath(`/projects/${projectId}/material`);
   revalidatePath(`/projects/${projectId}/purchases`);
   revalidatePath(`/projects/${projectId}/warehouse`);
+  /*
+   * The cached supplier list carries a count of each supplier's purchases, so
+   * posting one makes that list stale even though nothing in the catalogue was
+   * edited. Easy to overlook, and the symptom would be a supplier that cannot
+   * be deleted for reasons the screen does not show.
+   */
+  revalidateTag(MASTER_DATA_TAG);
 }
 
 // --- purchases --------------------------------------------------------------

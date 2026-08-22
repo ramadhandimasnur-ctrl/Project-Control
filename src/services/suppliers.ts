@@ -11,6 +11,7 @@ import { assertOrgAccess } from './org-access';
 import { writeAuditLog } from './audit';
 import { type SessionUser } from './session';
 
+import { cachedByOrg } from '@/lib/cache';
 export type SupplierRow = {
   id: string;
   code: string;
@@ -24,7 +25,11 @@ export type SupplierRow = {
 
 export async function listSuppliers(userId: string): Promise<SupplierRow[]> {
   const access = await assertOrgAccess(userId);
+  // Authorisation is re-checked above on every call; only the rows are cached.
+  return cachedByOrg('suppliers', access.orgId, () => loadSuppliers(access.orgId));
+}
 
+async function loadSuppliers(orgId: string): Promise<SupplierRow[]> {
   const usage = db.$with('supplier_usage').as(
     db
       .select({ supplierId: purchases.supplierId, total: count().as('total') })
@@ -46,7 +51,7 @@ export async function listSuppliers(userId: string): Promise<SupplierRow[]> {
     })
     .from(suppliers)
     .leftJoin(usage, eq(usage.supplierId, suppliers.id))
-    .where(eq(suppliers.orgId, access.orgId))
+    .where(eq(suppliers.orgId, orgId))
     .orderBy(asc(suppliers.name));
 
   return rows.map((r) => ({ ...r, purchaseCount: r.purchaseCount ?? 0 }));

@@ -209,6 +209,20 @@ Semua yang ada di `.env.example` wajib terisi. Tiga hal yang mudah terlewat:
 - Sandi Postgres yang mengandung `/` atau `@` tetap aman — `src/db/connection.ts`
   mengurai connection string sendiri justru karena `new URL()` gagal menanganinya.
 
+### Region server harus sama dengan region database
+
+`vercel.json` mengunci fungsi ke `hnd1` (Tokyo) karena database berada di
+`ap-northeast-1`. Ini bukan penyetelan halus — ini pengeluaran terbesar dalam
+satu render halaman.
+
+Tanpa `vercel.json`, Vercel menaruh fungsi di `iad1` (Washington DC). Setiap
+query lalu menyeberangi Pasifik: sekitar 170ms sekali jalan, dan satu halaman
+menembakkan puluhan query. Halaman Dasbor Eksekutif sendiri butuh sekitar 50
+round trip. Di region yang sama angka itu turun ke satuan milidetik.
+
+Kalau database dipindahkan, region di `vercel.json` ikut dipindahkan. Keduanya
+harus selalu bersebelahan.
+
 ### Migrasi saat rilis
 
 ```bash

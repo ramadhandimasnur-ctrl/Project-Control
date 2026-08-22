@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 
 import { toUserMessage } from '@/lib/errors';
 import {
@@ -27,6 +27,7 @@ import {
 import { requireSessionUser } from '@/services/session';
 import { createSupplier, deleteSupplier, updateSupplier } from '@/services/suppliers';
 import { createUnit, deleteUnit, updateUnit } from '@/services/units';
+import { MASTER_DATA_TAG } from '@/lib/cache';
 
 export type ActionResult =
   | { ok: true }
@@ -55,6 +56,12 @@ const CATALOGUE_PATHS = [
 
 function revalidateCatalogue(): void {
   for (const path of CATALOGUE_PATHS) revalidatePath(path);
+  /*
+   * The catalogue lists are cached across requests, so clearing the rendered
+   * pages is not enough — the next render would repopulate them from the same
+   * stale rows. This is the only thing that drops them.
+   */
+  revalidateTag(MASTER_DATA_TAG);
 }
 
 // --- resources --------------------------------------------------------------
