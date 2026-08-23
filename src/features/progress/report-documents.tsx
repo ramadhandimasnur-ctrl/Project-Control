@@ -9,6 +9,15 @@ import { DocumentUploader, type StoredDocument } from './document-uploader';
  * and the report's own documentation sits in its own section. Grouping is by
  * work item id — matching on name would file a photograph under the wrong item
  * as soon as two share a name, which on a printed report is a false claim.
+ *
+ * Per-item photographs are shown here but not managed here. They are attached
+ * while the work is being inspected, from Input Progres → Mutu, which is the
+ * moment somebody is standing in front of the work with a camera. Offering a
+ * second way in from the report meant every item without a photograph printed
+ * an empty upload box, and the same photograph could be attached from two
+ * places that each looked like the right one. The report's own documentation
+ * is different — it belongs to the report rather than to any one item, so it
+ * is uploaded where it belongs.
  */
 export function ReportDocuments({
   projectId,
@@ -30,7 +39,9 @@ export function ReportDocuments({
       item,
       photos: documents.filter((doc) => doc.workItemId === item.id),
     }))
-    .filter((group) => group.photos.length > 0 || canEdit);
+    // Only items that actually have a photograph. Nothing can be added from
+    // here, so an empty group would be a heading over nothing.
+    .filter((group) => group.photos.length > 0);
 
   return (
     <div className="space-y-6">
@@ -59,11 +70,23 @@ export function ReportDocuments({
               // taken against; a file name tells a printed report nothing.
               caption: photo.caption ?? `${item.code} — ${item.name}`,
             }))}
-            canEdit={canEdit}
+            canEdit={false}
             label={`Foto ${item.code}`}
           />
         </div>
       ))}
+
+      {/*
+        Said once, to the only person who can act on it, and only when there is
+        nothing to show — a report full of photographs does not need telling
+        where they came from.
+      */}
+      {perItem.length === 0 && canEdit ? (
+        <p className="text-sm text-muted-foreground">
+          Foto per pekerjaan diambil dari Input Progres → Mutu. Belum ada yang terlampir untuk
+          periode ini.
+        </p>
+      ) : null}
 
       {general.length === 0 && documents.length === 0 && !canEdit ? (
         <p className="text-sm text-muted-foreground">Belum ada foto terlampir.</p>
