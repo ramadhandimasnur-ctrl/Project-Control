@@ -400,6 +400,62 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
       expect(round2(row?.margin)).toBe(estimate.margin);
     });
 
+    /*
+     * A quantity typed in place of a coefficient.
+     *
+     * The figure is meant to be used as it stands: not multiplied by the
+     * volume a second time, and not inflated by waste. The two things that
+     * could silently disagree about it are the SQL views and lib/calc, so both
+     * are checked against the same arithmetic — 9 zak at Rp48.000 is
+     * Rp432.000, whatever route the number took to get there.
+     */
+    describe('kebutuhan yang diisi langsung', () => {
+      const TYPED_QTY = 9;
+      const RAP_PRICE = 48_000;
+
+      beforeEach(async () => {
+        await sql.unsafe(`
+          UPDATE work_item_resources
+          SET qty = ${TYPED_QTY}, waste_factor = 0
+          WHERE work_item_id = '${workItemId}'
+            AND estimate_type = 'RAP'
+            AND resource_id = (SELECT id FROM resources WHERE org_id = '${orgId}' AND code = 'M.01')
+        `);
+      });
+
+      it('memakai angka itu apa adanya, bukan dikalikan volume lagi', async () => {
+        const [row] = await sql`
+          SELECT qty_required, value_rap FROM v_material_requirement
+          WHERE project_id = ${projectId} AND resource_code = 'M.01'
+        `;
+
+        expect(Number(row?.qty_required)).toBe(TYPED_QTY);
+        expect(round2(row?.value_rap)).toBe((TYPED_QTY * RAP_PRICE).toFixed(2));
+      });
+
+      it('view SQL dan lib/calc tetap sepakat soal biayanya', async () => {
+        const estimate = await ahsp.getWorkItemEstimate(userId, projectId, workItemId);
+        const [row] = await sql`
+          SELECT unit_cost_rap, total_rap FROM v_work_item_cost
+          WHERE work_item_id = ${workItemId}
+        `;
+
+        expect(round2(row?.unit_cost_rap)).toBe(estimate.unitCostRap);
+        expect(round2(row?.total_rap)).toBe(estimate.totalRap);
+      });
+
+      it('baris itu menyumbang tepat kebutuhan x harga pada total RAP', async () => {
+        const estimate = await ahsp.getWorkItemEstimate(userId, projectId, workItemId);
+        const line = estimate.lines.find(
+          (l) => l.resourceCode === 'M.01' && l.estimateType === 'RAP',
+        );
+
+        expect(line?.qtyTyped).not.toBeNull();
+        expect(Number(line?.qty)).toBe(TYPED_QTY);
+        expect(round2(line?.amount)).toBe((TYPED_QTY * RAP_PRICE).toFixed(2));
+      });
+    });
+
     it('v_work_item_weight cocok dengan getProjectEstimate', async () => {
       const estimate = await ahsp.getProjectEstimate(userId, projectId);
       const rows = await sql`

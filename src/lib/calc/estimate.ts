@@ -21,6 +21,49 @@ export type EstimateLine = {
 const wasteMultiplier = (waste: Numeric | undefined): Decimal =>
   toDecimal(1).plus(toDecimal(waste ?? 0));
 
+/** A line as stored: a coefficient, or a quantity typed in its place. */
+export type LineInput = {
+  coef: Numeric;
+  wasteFactor?: Numeric;
+  /** When set, replaces the coefficient — waste included. */
+  qty?: Numeric | null;
+};
+
+/**
+ * The quantity a line requires for the whole work item.
+ *
+ * A typed quantity is returned as it stands. It is the final figure to be
+ * procured, so multiplying it by the volume would order the job twice over,
+ * and applying waste to it would order more than was asked for — somebody who
+ * writes "9 lengths" means nine.
+ */
+export function lineQuantity(line: LineInput, volume: Numeric): Decimal {
+  if (line.qty !== null && line.qty !== undefined) return toDecimal(line.qty);
+  return toDecimal(volume).times(toDecimal(line.coef)).times(wasteMultiplier(line.wasteFactor));
+}
+
+/**
+ * The coefficient a line behaves as, once a typed quantity is accounted for.
+ *
+ * Dividing the typed quantity back out by the volume is what lets the rest of
+ * the system stay in coefficients: unit cost, totals, weights, the S-curve and
+ * the material schedule all keep their existing arithmetic, and none of them
+ * needs to know that this particular line was written the other way round.
+ *
+ * Waste is already inside the result, so a caller passing this on must not
+ * apply `wasteFactor` again.
+ *
+ * A volume of zero has no coefficient to speak of — nothing divided among
+ * nothing — and yields zero. Such an item costs zero either way; the write
+ * path refuses a typed quantity there rather than letting it look meaningful.
+ */
+export function effectiveCoefficient(line: LineInput, volume: Numeric): Decimal {
+  if (line.qty === null || line.qty === undefined) {
+    return toDecimal(line.coef).times(wasteMultiplier(line.wasteFactor));
+  }
+  return safeDivide(toDecimal(line.qty), toDecimal(volume)) ?? toDecimal(0);
+}
+
 /** Quantity of a resource needed for the whole work item, at RAB coefficients. */
 export function qtyRab(volume: Numeric, coefRab: Numeric, waste?: Numeric): Decimal {
   return toDecimal(volume).times(toDecimal(coefRab)).times(wasteMultiplier(waste));

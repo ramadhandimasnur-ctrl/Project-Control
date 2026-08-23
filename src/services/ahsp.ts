@@ -7,7 +7,12 @@ import { db } from '@/db';
 import { withUser } from '@/db/context';
 import { projects, resources, units, workGroups, workItemResources, workItems } from '@/db/schema';
 import { type Decimal, safeDivide, toDecimal } from '@/lib/calc/decimal';
-import { estimateWorkItem, type EstimateLine } from '@/lib/calc/estimate';
+import {
+  effectiveCoefficient,
+  estimateWorkItem,
+  lineQuantity,
+  type EstimateLine,
+} from '@/lib/calc/estimate';
 import {
   computeWeights,
   reconcileContractValue,
@@ -46,8 +51,16 @@ export type AhspLineView = {
   sortOrder: number;
   /** null when the price book has no entry in force — rendered as "—". */
   price: string | null;
-  /** volume x coefficient x (1 + waste): what must actually be procured. */
+  /** What must actually be procured, however the line arrived at it. */
   qty: string;
+  /*
+   * The figure somebody typed, or null when the quantity was derived.
+   *
+   * Kept apart from `qty` so the screen can tell the two cases apart: a
+   * derived quantity is a consequence of the coefficient and moves when the
+   * volume does, while a typed one is a decision and does not.
+   */
+  qtyTyped: string | null;
   amount: string | null;
 };
 
@@ -132,6 +145,7 @@ export async function getWorkItemEstimate(
       role: workItemResources.role,
       coef: workItemResources.coef,
       wasteFactor: workItemResources.wasteFactor,
+      qty: workItemResources.qty,
       note: workItemResources.note,
       sortOrder: workItemResources.sortOrder,
     })
@@ -165,17 +179,17 @@ export async function getWorkItemEstimate(
   const volume = toDecimal(item.volume);
   // Procurement follows the volume execution actually plans to build.
   const volumeRap = item.volumeRap === null ? volume : toDecimal(item.volumeRap);
-  const wasteMultiplier = (waste: string) => toDecimal(1).plus(toDecimal(waste));
 
   const lines: AhspLineView[] = rows.map((row) => {
     const book = row.estimateType === 'RAB' ? rab : rap;
     const price = book.resolved.get(row.resourceId)?.price ?? null;
     const onVolume = row.estimateType === 'RAB' ? volume : volumeRap;
-    const qty = onVolume.times(toDecimal(row.coef)).times(wasteMultiplier(row.wasteFactor));
+    const qty = lineQuantity(row, onVolume);
 
     return {
       ...row,
       price: price?.toFixed(2) ?? null,
+      qtyTyped: row.qty,
       qty: qty.toFixed(4),
       amount: price === null ? null : qty.times(price).toFixed(2),
     };
@@ -189,9 +203,14 @@ export async function getWorkItemEstimate(
    * total is incomplete.
    */
   const estimateLines: EstimateLine[] = rows.map((row) => ({
-    coefRab: row.estimateType === 'RAB' ? row.coef : '0',
-    coefRap: row.estimateType === 'RAP' ? row.coef : '0',
-    wasteFactor: row.wasteFactor,
+    /*
+     * The effective coefficient, not the stored one: a line may carry a typed
+     * quantity instead, and this is where the two become one thing again.
+     * Waste is already inside it, so `wasteFactor` must not be applied twice.
+     */
+    coefRab: row.estimateType === 'RAB' ? effectiveCoefficient(row, volume).toString() : '0',
+    coefRap: row.estimateType === 'RAP' ? effectiveCoefficient(row, volumeRap).toString() : '0',
+    wasteFactor: '0',
     priceRab: rab.resolved.get(row.resourceId)?.price ?? 0,
     priceRap: rap.resolved.get(row.resourceId)?.price ?? 0,
   }));
@@ -321,6 +340,7 @@ export async function listWorkItemAnalyses(
             role: workItemResources.role,
             coef: workItemResources.coef,
             wasteFactor: workItemResources.wasteFactor,
+            qty: workItemResources.qty,
             note: workItemResources.note,
             sortOrder: workItemResources.sortOrder,
           })
@@ -351,7 +371,6 @@ export async function listWorkItemAnalyses(
     rowsByItem.set(row.workItemId, list);
   }
 
-  const wasteMultiplier = (waste: string) => toDecimal(1).plus(toDecimal(waste));
 
   return {
     showCosts,
@@ -364,11 +383,12 @@ export async function listWorkItemAnalyses(
         const book = row.estimateType === 'RAB' ? rab : rap;
         const price = book.resolved.get(row.resourceId)?.price ?? null;
         const onVolume = row.estimateType === 'RAB' ? volume : volumeRap;
-        const qty = onVolume.times(toDecimal(row.coef)).times(wasteMultiplier(row.wasteFactor));
+        const qty = lineQuantity(row, onVolume);
 
         return {
           ...row,
           price: price?.toFixed(2) ?? null,
+          qtyTyped: row.qty,
           qty: qty.toFixed(4),
           amount: price === null ? null : qty.times(price).toFixed(2),
         };
@@ -378,9 +398,11 @@ export async function listWorkItemAnalyses(
         volume: item.volume,
         volumeRap: item.volumeRap,
         lines: itemRows.map((row) => ({
-          coefRab: row.estimateType === 'RAB' ? row.coef : '0',
-          coefRap: row.estimateType === 'RAP' ? row.coef : '0',
-          wasteFactor: row.wasteFactor,
+          coefRab:
+            row.estimateType === 'RAB' ? effectiveCoefficient(row, volume).toString() : '0',
+          coefRap:
+            row.estimateType === 'RAP' ? effectiveCoefficient(row, volumeRap).toString() : '0',
+          wasteFactor: '0',
           priceRab: rab.resolved.get(row.resourceId)?.price ?? 0,
           priceRap: rap.resolved.get(row.resourceId)?.price ?? 0,
         })),
@@ -547,6 +569,7 @@ export async function getProjectEstimate(
             estimateType: workItemResources.estimateType,
             coef: workItemResources.coef,
             wasteFactor: workItemResources.wasteFactor,
+            qty: workItemResources.qty,
           })
           .from(workItemResources)
           .where(inArray(workItemResources.workItemId, itemIds));
@@ -579,9 +602,13 @@ export async function getProjectEstimate(
       volume: item.volume,
       volumeRap: item.volumeRap,
       lines: itemLines.map((l) => ({
-        coefRab: l.estimateType === 'RAB' ? l.coef : '0',
-        coefRap: l.estimateType === 'RAP' ? l.coef : '0',
-        wasteFactor: l.wasteFactor,
+        // As above: a typed quantity becomes a coefficient here, waste included.
+        coefRab: l.estimateType === 'RAB' ? effectiveCoefficient(l, item.volume).toString() : '0',
+        coefRap:
+          l.estimateType === 'RAP'
+            ? effectiveCoefficient(l, item.volumeRap ?? item.volume).toString()
+            : '0',
+        wasteFactor: '0',
         priceRab: rab.resolved.get(l.resourceId)?.price ?? 0,
         priceRap: rap.resolved.get(l.resourceId)?.price ?? 0,
       })),

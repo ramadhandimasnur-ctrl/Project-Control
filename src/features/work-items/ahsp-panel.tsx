@@ -39,6 +39,7 @@ import type {
 
 import { deleteAhspLineAction } from './actions';
 import { AhspLineDialog } from './ahsp-line-dialog';
+import { safeDivide, toDecimal } from '@/lib/calc/decimal';
 
 /**
  * The right-hand panel: one work item's two analyses.
@@ -269,6 +270,7 @@ export function AhspPanel({
             role: editing.role,
             coef: editing.coef,
             wasteFactor: String(Number(editing.wasteFactor) * 100),
+            qty: editing.qtyTyped ?? '',
             note: editing.note ?? '',
             sortOrder: editing.sortOrder,
           }}
@@ -315,6 +317,14 @@ function AnalysisSection({
   const byRole = new Map<AhspRole, AhspLineView[]>();
   for (const role of AHSP_ROLE_ORDER) byRole.set(role, []);
   for (const line of lines) byRole.get(line.role)?.push(line);
+
+  /*
+   * What the coefficient would have been, for a line written as a quantity.
+   * Presentation only — the figure the money is built from is computed in
+   * `lib/calc/estimate`, and this must never become a second source for it.
+   */
+  const derivedCoefficient = (qty: string, onVolume: string): string =>
+    (safeDivide(qty, onVolume) ?? toDecimal(0)).toString();
 
   const emptyRoles = AHSP_ROLE_ORDER.filter((role) => (byRole.get(role) ?? []).length === 0);
 
@@ -400,7 +410,14 @@ function AnalysisSection({
 
                     {/* Coefficient, unit and base price, read top to bottom. */}
                     <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                      <Detail label="Koefisien" value={formatCoefficient(line.coef)} />
+                      <Detail
+                        label="Koefisien"
+                        value={formatCoefficient(
+                          line.qtyTyped === null
+                            ? line.coef
+                            : derivedCoefficient(line.qty, volume),
+                        )}
+                      />
                       <Detail label="Satuan" value={line.unitCode} />
                       <Detail
                         label="Susut"
@@ -410,7 +427,10 @@ function AnalysisSection({
                             : formatPercent(line.wasteFactor, 1)
                         }
                       />
-                      <Detail label="Kebutuhan" value={formatQuantity(line.qty)} />
+                      <Detail
+                        label={line.qtyTyped === null ? 'Kebutuhan' : 'Kebutuhan (diisi langsung)'}
+                        value={formatQuantity(line.qty)}
+                      />
                       {showCosts ? (
                         <Detail
                           label="Harga dasar"
@@ -475,17 +495,35 @@ function AnalysisSection({
                         ) : null}
                       </TableCell>
                       <TableCell className="text-right font-mono tabular-nums">
-                        {formatCoefficient(line.coef)}
-                        {/* The waste sits with the coefficient it multiplies. */}
-                        {Number(line.wasteFactor) === 0 ? null : (
-                          <span className="block text-xs text-muted-foreground">
-                            susut {formatPercent(line.wasteFactor, 1)}
+                        {line.qtyTyped === null ? (
+                          <>
+                            {formatCoefficient(line.coef)}
+                            {/* The waste sits with the coefficient it multiplies. */}
+                            {Number(line.wasteFactor) === 0 ? null : (
+                              <span className="block text-xs text-muted-foreground">
+                                susut {formatPercent(line.wasteFactor, 1)}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          /*
+                           * Derived, and shown as such. A sheet printed for
+                           * tender is still expected to carry a coefficient
+                           * per line, so the figure is not simply dropped —
+                           * but it follows the quantity here rather than
+                           * producing it, and reads muted to say so.
+                           */
+                          <span className="text-muted-foreground">
+                            {formatCoefficient(derivedCoefficient(line.qty, volume))}
                           </span>
                         )}
                       </TableCell>
                       <TableCell className="text-right font-mono tabular-nums">
                         {formatQuantity(line.qty)}
                         <span className="ml-1 text-xs text-muted-foreground">{line.unitCode}</span>
+                        {line.qtyTyped === null ? null : (
+                          <span className="block text-xs text-muted-foreground">diisi langsung</span>
+                        )}
                       </TableCell>
                       {showCosts ? (
                         <TableCell className="text-right font-mono tabular-nums">

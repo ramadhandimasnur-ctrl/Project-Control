@@ -205,11 +205,34 @@ export function AhspLineDialog({
             registration={register('coef')}
           />
 
+          {/*
+            The other way to write the same line.
+            
+            Most lines are a rate: so much per unit of work, which scales when
+            the volume changes. Some are simply known as a total — nine lengths
+            of timber for the whole job — and writing that as a coefficient
+            means dividing by the volume and rounding, which nobody can check.
+            Filling this in replaces the coefficient rather than adding to it.
+          */}
+          <TextField
+            id="qty"
+            label="Kebutuhan (isi bila jumlahnya sudah pasti)"
+            inputMode="decimal"
+            hint="Kosongkan untuk menghitung dari koefisien. Diisi berarti angka ini dipakai apa adanya, dan biaya baris mengikutinya."
+            error={messageOf('qty')}
+            registration={register('qty')}
+          />
+
           <TextField
             id="wasteFactor"
             label="Faktor susut (%)"
             inputMode="decimal"
-            hint="Contoh: 5 berarti kebutuhan ditambah 5%."
+            hint={
+              Number(watch('qty') ?? 0) > 0
+                ? 'Tidak berlaku: kebutuhan sudah diisi langsung.'
+                : 'Contoh: 5 berarti kebutuhan ditambah 5%.'
+            }
+            disabled={Number(watch('qty') ?? 0) > 0}
             error={messageOf('wasteFactor')}
             registration={register('wasteFactor')}
           />

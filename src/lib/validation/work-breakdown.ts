@@ -51,8 +51,10 @@ const optionalMoney = (label: string) =>
       ctx.addIssue({ code: 'custom', message: parsed.error.issues[0]?.message ?? `${label} tidak valid.` });
       return z.NEVER;
     }
-    return parsed.data;
-  });
+      return parsed.data;
+    })
+    .optional()
+    .transform((v) => v ?? null);
 
 /**
  * A quantity that may legitimately be absent.
@@ -62,21 +64,33 @@ const optionalMoney = (label: string) =>
  * nobody plans to build.
  */
 const optionalQuantity = (label: string) =>
-  z.union([z.string(), z.number(), z.null(), z.undefined()]).transform((raw, ctx): string | null => {
-    if (raw === null || raw === undefined) return null;
-    const text = typeof raw === 'number' ? String(raw) : raw.trim();
-    if (text === '') return null;
+  /*
+   * `.optional()` as well as `z.undefined()` in the union.
+   *
+   * They are not the same thing: the union covers a key present and holding
+   * undefined, while a key that is absent altogether is refused by the object
+   * unless the field itself is optional. A field whose entire purpose is to be
+   * skippable should not insist on being mentioned.
+   */
+  z
+    .union([z.string(), z.number(), z.null(), z.undefined()])
+    .transform((raw, ctx): string | null => {
+      if (raw === null || raw === undefined) return null;
+      const text = typeof raw === 'number' ? String(raw) : raw.trim();
+      if (text === '') return null;
 
-    const parsed = quantityField(label).safeParse(text);
-    if (!parsed.success) {
-      ctx.addIssue({
-        code: 'custom',
-        message: parsed.error.issues[0]?.message ?? `${label} tidak valid.`,
-      });
-      return z.NEVER;
-    }
-    return parsed.data;
-  });
+      const parsed = quantityField(label).safeParse(text);
+      if (!parsed.success) {
+        ctx.addIssue({
+          code: 'custom',
+          message: parsed.error.issues[0]?.message ?? `${label} tidak valid.`,
+        });
+        return z.NEVER;
+      }
+      return parsed.data;
+    })
+    .optional()
+    .transform((v) => v ?? null);
 
 export const workItemFormSchema = z.object({
   code: code('Kode pekerjaan'),
@@ -171,14 +185,36 @@ export const ahspLineFormSchema = z
     }),
     coef: coefficientField('Koefisien'),
     wasteFactor: percentField('Faktor susut'),
+    /*
+     * A quantity typed instead of a coefficient.
+     *
+     * Some lines are known as a total rather than as a rate — nine lengths of
+     * timber for the whole job, because that is what fits on the truck. Left
+     * empty, the quantity is derived from the coefficient as it always was.
+     */
+    qty: optionalQuantity('Kebutuhan'),
     note: optionalText(300),
     sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
   })
-  // A line contributing nothing is almost always a half-finished entry rather
-  // than a deliberate zero.
-  .refine((v) => Number(v.coef) > 0, {
-    message: 'Koefisien harus lebih besar dari nol.',
+  /*
+   * One of the two has to say something.
+   *
+   * A line contributing nothing is almost always a half-finished entry rather
+   * than a deliberate zero, and that was the whole of this rule when the
+   * coefficient was the only way to write a line. Now either may carry it.
+   */
+  .refine((v) => Number(v.coef) > 0 || Number(v.qty ?? 0) > 0, {
+    message: 'Isi koefisien, atau isi kebutuhan bila jumlahnya sudah diketahui.',
     path: ['coef'],
+  })
+  /*
+   * Waste is a percentage added to a derived quantity. A typed quantity is
+   * already the figure to be procured, so adding waste on top would order more
+   * than was asked for — silently, and only on the lines written this way.
+   */
+  .refine((v) => v.qty === null || v.qty === undefined || Number(v.wasteFactor) === 0, {
+    message: 'Faktor susut tidak berlaku bila kebutuhan diisi langsung.',
+    path: ['wasteFactor'],
   });
 
 export type AhspLineFormInput = z.input<typeof ahspLineFormSchema>;
@@ -190,6 +226,7 @@ export const AHSP_LINE_FORM_DEFAULTS = {
   role: 'MATERIAL',
   coef: '0',
   wasteFactor: '0',
+  qty: '',
   note: '',
   sortOrder: 0,
 } satisfies AhspLineFormInput;

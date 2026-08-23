@@ -64,7 +64,17 @@ WITH priced_line AS (
     wi.project_id,
     wir.role,
     wir.estimate_type,
-    wir.coef * (1 + wir.waste_factor) AS eff_coef,
+    -- A typed quantity replaces the coefficient, waste included, and is
+    -- divided back out by the volume it was measured against so that
+    -- everything downstream keeps working in coefficients. RAB is measured
+    -- against the contracted volume, RAP against the volume execution plans.
+    CASE
+      WHEN wir.qty IS NULL THEN wir.coef * (1 + wir.waste_factor)
+      ELSE wir.qty / nullif(
+        CASE WHEN wir.estimate_type = 'RAP'
+             THEN coalesce(wi.volume_rap, wi.volume)
+             ELSE wi.volume END, 0)
+    END AS eff_coef,
     -- One price per line, of the type the line belongs to. A line is part of
     -- exactly one analysis now, so resolving both would price a resource the
     -- other analysis never asked for.
@@ -239,9 +249,15 @@ SELECT
   r.type                                        AS resource_type,
   u.code                                        AS unit_code,
   count(DISTINCT wi.id)                         AS work_item_count,
-  sum(coalesce(wi.volume_rap, wi.volume) * wir.coef * (1 + wir.waste_factor)) AS qty_required,
+  -- A typed quantity is already the whole-item figure, so it is summed as it
+  -- stands rather than being multiplied by the volume a second time.
+  sum(CASE WHEN wir.qty IS NULL
+           THEN coalesce(wi.volume_rap, wi.volume) * wir.coef * (1 + wir.waste_factor)
+           ELSE wir.qty END)                          AS qty_required,
   max(rap.price)                                AS price_rap,
-  sum(coalesce(wi.volume_rap, wi.volume) * wir.coef * (1 + wir.waste_factor))
+  sum(CASE WHEN wir.qty IS NULL
+           THEN coalesce(wi.volume_rap, wi.volume) * wir.coef * (1 + wir.waste_factor)
+           ELSE wir.qty END)
     * max(rap.price)                            AS value_rap
 FROM work_item_resources wir
 JOIN work_items wi ON wi.id = wir.work_item_id AND wi.is_active

@@ -164,6 +164,23 @@ export const workItemResources = pgTable(
     estimateType: priceTypeEnum('estimate_type').notNull(),
     coef: coefficient('coef').notNull().default('0'),
     wasteFactor: percent('waste_factor').notNull().default('0'),
+    /*
+     * A quantity typed in place of a coefficient.
+     *
+     * The coefficient is the right way to describe most work: it says how much
+     * of a resource one unit of the item consumes, and it scales when the
+     * volume changes. But some lines are simply known as a total — 9 lengths of
+     * timber for the whole job, because that is what fits in the truck, not
+     * because 0,2686 lengths per metre means anything to anybody.
+     *
+     * When this is set it replaces the coefficient entirely, waste included: a
+     * typed quantity is the final figure to be procured, so applying waste on
+     * top would silently order more than was asked for. Everything downstream
+     * still works in coefficients — this divides back out by the volume — so
+     * unit cost, totals, weights and the material schedule need no special
+     * case.
+     */
+    qty: quantity('qty'),
     note: text('note'),
     sortOrder: integer('sort_order').notNull().default(0),
     ...auditColumns(),
@@ -177,7 +194,10 @@ export const workItemResources = pgTable(
     ),
     index('work_item_resources_work_item_idx').on(t.workItemId),
     index('work_item_resources_resource_idx').on(t.resourceId),
-    check('work_item_resources_nonneg', sql`${t.coef} >= 0 AND ${t.wasteFactor} >= 0`),
+    check(
+      'work_item_resources_nonneg',
+      sql`${t.coef} >= 0 AND ${t.wasteFactor} >= 0 AND (${t.qty} IS NULL OR ${t.qty} >= 0)`,
+    ),
   ],
 );
 

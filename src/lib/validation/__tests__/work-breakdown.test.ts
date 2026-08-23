@@ -138,11 +138,33 @@ describe('ahspLineFormSchema', () => {
     );
   });
 
-  // A line contributing nothing is almost always half-entered.
-  it('rejects a line whose coefficient is zero', () => {
+  // A line contributing nothing is almost always half-entered — but a line may
+  // now carry its figure as a quantity instead, so neither field alone decides.
+  it('rejects a line that carries neither a coefficient nor a quantity', () => {
     const result = ahspLineFormSchema.safeParse(line({ coef: '0' }));
     expect(result.success).toBe(false);
-    expect(messageFor(result, 'coef')).toMatch(/lebih besar dari nol/);
+    expect(messageFor(result, 'coef')).toMatch(/Isi koefisien, atau isi kebutuhan/);
+  });
+
+  it('accepts a line whose quantity is typed instead of a coefficient', () => {
+    const result = ahspLineFormSchema.safeParse(line({ coef: '0', qty: '9' }));
+    expect(result.success).toBe(true);
+    expect(result.data?.qty).toBe('9.0000');
+  });
+
+  /*
+   * Waste is a percentage added to a derived quantity. A typed quantity is
+   * already the figure to be procured, so accepting both would quietly order
+   * more than the number somebody wrote down.
+   */
+  it('refuses waste on a line whose quantity is typed', () => {
+    const result = ahspLineFormSchema.safeParse(line({ coef: '0', qty: '9', wasteFactor: '5' }));
+    expect(result.success).toBe(false);
+    expect(messageFor(result, 'wasteFactor')).toMatch(/tidak berlaku/);
+  });
+
+  it('treats a missing quantity as absent rather than invalid', () => {
+    expect(ahspLineFormSchema.safeParse(line()).data?.qty).toBeNull();
   });
 
   /*
