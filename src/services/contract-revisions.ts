@@ -26,6 +26,7 @@ import { assertProjectAccess } from './access';
 import { getProjectEstimate } from './ahsp';
 import { writeAuditLog } from './audit';
 import { type SessionUser } from './session';
+import { addDays } from '@/lib/date';
 
 /**
  * Pekerjaan tambah/kurang — contract change orders.
@@ -65,6 +66,10 @@ export type RevisionRow = {
   status: RevisionStatus;
   contractValueBefore: string | null;
   contractValueAfter: string | null;
+  /** Days the addendum grants, or takes back when negative. */
+  scheduleImpactDays: number;
+  finishDateBefore: string | null;
+  finishDateAfter: string | null;
   approvedAt: string | null;
   lineCount: number;
 };
@@ -79,6 +84,9 @@ export async function listRevisions(userId: string, projectId: string): Promise<
       title: contractRevisions.title,
       reason: contractRevisions.reason,
       effectiveDate: contractRevisions.effectiveDate,
+      scheduleImpactDays: contractRevisions.scheduleImpactDays,
+      finishDateBefore: contractRevisions.finishDateBefore,
+      finishDateAfter: contractRevisions.finishDateAfter,
       status: contractRevisions.status,
       contractValueBefore: contractRevisions.contractValueBefore,
       contractValueAfter: contractRevisions.contractValueAfter,
@@ -212,6 +220,9 @@ export async function getRevision(
     status: header.status,
     contractValueBefore: header.contractValueBefore,
     contractValueAfter: header.contractValueAfter,
+    scheduleImpactDays: header.scheduleImpactDays,
+    finishDateBefore: header.finishDateBefore,
+    finishDateAfter: header.finishDateAfter,
     approvedAt: header.approvedAt?.toISOString() ?? null,
     lineCount: lines.length,
     lines: summary.lines.map((line) => {
@@ -370,6 +381,12 @@ export type RevisionInput = {
   title: string;
   reason: string | null;
   effectiveDate: string;
+  /*
+   * Days added to the contract. Negative shortens it — work removed can pull a
+   * programme in, and refusing to record that would leave the only documented
+   * way of shortening a contract missing.
+   */
+  scheduleImpactDays: number;
   lines: { workItemId: string; volumeAfter: string; note: string | null }[];
 };
 
@@ -422,6 +439,7 @@ export async function createRevision(
         title: input.title,
         reason: input.reason,
         effectiveDate: input.effectiveDate,
+        scheduleImpactDays: input.scheduleImpactDays,
         createdBy: user.id,
         updatedBy: user.id,
       })
@@ -510,7 +528,12 @@ export async function approveRevision(
   user: SessionUser,
   projectId: string,
   revisionId: string,
-): Promise<{ contractValueBefore: string; contractValueAfter: string }> {
+): Promise<{
+  contractValueBefore: string;
+  contractValueAfter: string;
+  finishDateBefore: string | null;
+  finishDateAfter: string | null;
+}> {
   const access = await assertProjectAccess(user.id, projectId, 'PROJECT_MANAGER');
 
   const detail = await getRevision(user.id, projectId, revisionId);
@@ -529,6 +552,24 @@ export async function approveRevision(
 
   const { contractValueBefore, contractValueAfter } = detail.summary;
 
+  /*
+   * Time moves with the money.
+   *
+   * The finish date is read now and both sides are stored, for the same reason
+   * the contract values beside them are: a revision approved in March has to
+   * keep saying what the programme was in March, whatever later revisions do
+   * to it. Zero days is the common case and costs nothing to record.
+   */
+  const [projectRow] = await db
+    .select({ endDate: projects.endDate })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+
+  const finishBefore = projectRow?.endDate ?? null;
+  const finishAfter =
+    finishBefore === null ? null : addDays(finishBefore, detail.scheduleImpactDays);
+
   await withUser(user.id, async (tx) => {
     for (const line of detail.lines) {
       await tx
@@ -539,7 +580,13 @@ export async function approveRevision(
 
     await tx
       .update(projects)
-      .set({ contractValue: contractValueAfter, updatedBy: user.id })
+      .set({
+        contractValue: contractValueAfter,
+        // Only when the addendum actually grants time. Writing the same date
+        // back would still stamp the project as edited by this approval.
+        ...(finishAfter !== null && finishAfter !== finishBefore ? { endDate: finishAfter } : {}),
+        updatedBy: user.id,
+      })
       .where(eq(projects.id, projectId));
 
     await tx
@@ -548,6 +595,8 @@ export async function approveRevision(
         status: 'APPROVED',
         contractValueBefore,
         contractValueAfter,
+        finishDateBefore: finishBefore,
+        finishDateAfter: finishAfter,
         approvedBy: user.id,
         approvedAt: new Date(),
         updatedBy: user.id,
@@ -560,10 +609,16 @@ export async function approveRevision(
       tableName: 'contract_revisions',
       recordId: revisionId,
       action: 'UPDATE',
-      before: { status: detail.status, contractValue: contractValueBefore },
+      before: {
+        status: detail.status,
+        contractValue: contractValueBefore,
+        finishDate: finishBefore,
+      },
       after: {
         status: 'APPROVED',
         contractValue: contractValueAfter,
+        finishDate: finishAfter,
+        scheduleImpactDays: detail.scheduleImpactDays,
         lines: detail.lines.map((line) => ({
           workItemId: line.workItemId,
           volumeBefore: line.volumeBefore,
@@ -574,7 +629,7 @@ export async function approveRevision(
     });
   });
 
-  return { contractValueBefore, contractValueAfter };
+  return { contractValueBefore, contractValueAfter, finishDateBefore: finishBefore, finishDateAfter: finishAfter };
 }
 
 export async function cancelRevision(

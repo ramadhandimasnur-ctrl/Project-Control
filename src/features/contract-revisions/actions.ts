@@ -76,6 +76,7 @@ export async function createRevisionAction(projectId: string, raw: unknown): Pro
       title: parsed.data.title,
       reason: parsed.data.reason,
       effectiveDate: parsed.data.effectiveDate,
+      scheduleImpactDays: parsed.data.scheduleImpactDays,
       lines: parsed.data.lines,
     });
   } catch (error) {

@@ -18,3 +18,19 @@
 export function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
+
+/**
+ * Shifts an ISO day by a whole number of days.
+ *
+ * Built through `Date.UTC` rather than the local-time constructor: a project
+ * finishing on 31 March shifted by 30 days must land on 30 April in Purworejo
+ * and in every other timezone alike, and a date built in local time crosses a
+ * daylight-saving boundary an hour short and lands a day early.
+ */
+export function addDays(day: string, days: number): string {
+  const [y, m, d] = day.split('-').map(Number);
+  if (y === undefined || m === undefined || d === undefined) return day;
+
+  const shifted = new Date(Date.UTC(y, m - 1, d + days));
+  return shifted.toISOString().slice(0, 10);
+}

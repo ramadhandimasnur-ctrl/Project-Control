@@ -102,6 +102,28 @@ export const contractRevisions = pgTable(
     contractValueBefore: money('contract_value_before'),
     contractValueAfter: money('contract_value_after'),
 
+    /*
+     * Time, alongside money.
+     *
+     * Work added to a contract is usually also time added to it, and the
+     * extension is the part a delay claim rests on. Negotiated rather than
+     * calculated — the same extra volume can be absorbed or not depending on
+     * what else is on the critical path — so it is recorded, not derived.
+     *
+     * Negative is allowed and means acceleration: work removed can shorten a
+     * programme, and refusing to record that would leave the only way to shorten
+     * a contract undocumented.
+     */
+    scheduleImpactDays: integer('schedule_impact_days').notNull().default(0),
+
+    /*
+     * The finish dates on either side of the approval, as they stood at the
+     * moment it happened — the same reason the contract values beside them are
+     * stored rather than recomputed.
+     */
+    finishDateBefore: day('finish_date_before'),
+    finishDateAfter: day('finish_date_after'),
+
     approvedBy: uuid('approved_by').references(() => users.id, { onDelete: 'set null' }),
     approvedAt: timestamp('approved_at', { withTimezone: true }),
     ...auditColumns(),

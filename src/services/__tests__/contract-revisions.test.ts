@@ -123,6 +123,7 @@ describe.skipIf(!ready)('pekerjaan tambah/kurang', () => {
       title: 'Penyesuaian volume lapangan',
       reason: 'Berita acara uji',
       effectiveDate: '2026-05-01',
+      scheduleImpactDays: 0,
       lines: lines.map((line) => ({ ...line, note: null })),
     });
 
@@ -275,8 +276,72 @@ describe.skipIf(!ready)('pekerjaan tambah/kurang', () => {
         title: 'Kosong',
         reason: null,
         effectiveDate: '2026-05-01',
+      scheduleImpactDays: 0,
         lines: [],
       }),
     ).rejects.toThrow(/setidaknya satu pekerjaan/);
+  });
+
+  /*
+   * Time, not only money.
+   *
+   * Work added to a contract usually adds time to it, and the extension is
+   * what a delay claim rests on. The dates on either side are stored at the
+   * moment of approval for the same reason the contract values are: a revision
+   * approved in March has to keep saying what the programme was in March.
+   */
+  describe('dampak waktu', () => {
+    const draftWithDays = (days: number) =>
+      service.createRevision(user, projectId, {
+        title: 'Tambah pekerjaan galian',
+        reason: 'Kondisi tanah',
+        effectiveDate: '2026-05-01',
+        scheduleImpactDays: days,
+        lines: [{ workItemId: itemA, volumeAfter: '150', note: null }],
+      });
+
+    const finishDate = async (): Promise<string> => {
+      const [row] = await sql<{ end_date: string }[]>`
+        SELECT end_date::text FROM projects WHERE id = ${projectId}
+      `;
+      return row!.end_date;
+    };
+
+    it('memajukan tanggal selesai proyek sebanyak hari yang disetujui', async () => {
+      const { id } = await draftWithDays(30);
+      const result = await service.approveRevision(user, projectId, id);
+
+      // 31 Desember plus 30 hari jatuh di 30 Januari tahun berikutnya.
+      expect(result.finishDateBefore).toBe('2026-12-31');
+      expect(result.finishDateAfter).toBe('2027-01-30');
+      expect(await finishDate()).toBe('2027-01-30');
+    });
+
+    it('menyimpan kedua tanggal pada revisinya sendiri', async () => {
+      const { id } = await draftWithDays(14);
+      await service.approveRevision(user, projectId, id);
+
+      const detail = await service.getRevision(userId, projectId, id);
+      expect(detail.scheduleImpactDays).toBe(14);
+      expect(detail.finishDateBefore).toBe('2026-12-31');
+      expect(detail.finishDateAfter).toBe('2027-01-14');
+    });
+
+    it('tidak menyentuh tanggal selesai bila revisinya tidak meminta waktu', async () => {
+      const { id } = await draftWithDays(0);
+      await service.approveRevision(user, projectId, id);
+      expect(await finishDate()).toBe('2026-12-31');
+    });
+
+    /*
+     * Removing work can legitimately pull a programme in. Refusing to record
+     * that would leave the only documented way of shortening a contract
+     * missing from the system that documents the contract.
+     */
+    it('memundurkan tanggal selesai bila pekerjaannya dipercepat', async () => {
+      const { id } = await draftWithDays(-10);
+      await service.approveRevision(user, projectId, id);
+      expect(await finishDate()).toBe('2026-12-21');
+    });
   });
 });

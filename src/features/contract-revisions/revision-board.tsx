@@ -200,6 +200,21 @@ export function RevisionBoard({
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {formatDay(revision.effectiveDate)}
+                      {/*
+                        The time the addendum grants, shown beside the date it
+                        takes effect. An approved revision also shows where the
+                        finish date landed, because that is the figure a delay
+                        claim is argued from.
+                      */}
+                      {revision.scheduleImpactDays === 0 ? null : (
+                        <span className="block">
+                          {revision.scheduleImpactDays > 0 ? '+' : ''}
+                          {revision.scheduleImpactDays} hari
+                          {revision.finishDateAfter === null
+                            ? null
+                            : ` → ${formatDay(revision.finishDateAfter)}`}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right font-mono tabular-nums">
                       {revision.lineCount}

@@ -59,6 +59,12 @@ export function RevisionDialog({
   const [title, setTitle] = useState('');
   const [reason, setReason] = useState('');
   const [effectiveDate, setEffectiveDate] = useState(defaultEffectiveDate);
+  /*
+   * Kept as text, not a number. An empty box is a legitimate intermediate
+   * state while typing, and a numeric state would turn it into 0 or NaN under
+   * the user's cursor; the schema coerces it once, on submit.
+   */
+  const [scheduleImpactDays, setScheduleImpactDays] = useState('0');
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [formError, setFormError] = useState<{ message: string; hint?: string } | null>(null);
   const [pending, startTransition] = useTransition();
@@ -101,6 +107,7 @@ export function RevisionDialog({
         title,
         reason,
         effectiveDate,
+        scheduleImpactDays,
         lines: lines.map((line) => ({
           workItemId: line.workItemId,
           volumeAfter: line.volumeAfter,
@@ -166,6 +173,26 @@ export function RevisionDialog({
                 onChange={(event) => setEffectiveDate(event.target.value)}
               />
             </div>
+          </div>
+
+          {/*
+            Time, beside the money it comes with. Work added to a contract
+            usually adds days to it, and the extension is the part a delay
+            claim rests on — recorded when the addendum is drafted, not
+            remembered afterwards.
+          */}
+          <div className="space-y-1.5">
+            <Label htmlFor="cco-days">Perpanjangan waktu (hari)</Label>
+            <Input
+              id="cco-days"
+              inputMode="numeric"
+              value={scheduleImpactDays}
+              onChange={(event) => setScheduleImpactDays(event.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Diterapkan ke tanggal selesai proyek saat revisi disetujui. Isi 0 bila tidak menambah
+              waktu, atau angka negatif bila pekerjaannya justru dipercepat.
+            </p>
           </div>
 
           <div className="space-y-1.5">

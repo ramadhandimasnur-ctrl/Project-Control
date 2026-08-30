@@ -14,6 +14,17 @@ export const revisionFormSchema = z.object({
   title: requiredText('Judul revisi', 200),
   reason: optionalText(1000),
   effectiveDate: dayField('Tanggal berlaku'),
+  /*
+   * Days the addendum adds to the contract. Negative shortens it, which is
+   * what removing work can legitimately do. Bounded at five years either way
+   * so a slipped decimal cannot silently move a finish date to 2190.
+   */
+  scheduleImpactDays: z.coerce
+    .number({ message: 'Perpanjangan waktu harus berupa angka hari.' })
+    .int('Perpanjangan waktu dihitung dalam hari penuh.')
+    .min(-1825, 'Percepatan tidak boleh lebih dari 1825 hari.')
+    .max(1825, 'Perpanjangan tidak boleh lebih dari 1825 hari.')
+    .default(0),
   lines: z
     .array(
       z.object({
