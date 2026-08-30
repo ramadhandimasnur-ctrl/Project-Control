@@ -7,6 +7,7 @@ export * from './org';
 export * from './projects';
 export * from './resources';
 export * from './ahsp';
+export * from './ahsp-library';
 export * from './work';
 export * from './schedule';
 export * from './progress';

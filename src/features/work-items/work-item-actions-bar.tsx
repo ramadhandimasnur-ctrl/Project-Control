@@ -1,6 +1,6 @@
 'use client';
 
-import { BookmarkPlus, Copy, LayoutTemplate, Pencil, Plus, Trash2 } from 'lucide-react';
+import { BookmarkPlus, Copy, LayoutTemplate, Library, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
@@ -21,6 +21,7 @@ import { type WorkItemFormInput } from '@/lib/validation/work-breakdown';
 import type { WorkItemDeletionImpact } from '@/services/work-breakdown';
 
 import { deleteWorkItemAction } from './actions';
+import { ApplyLibraryDialog } from './apply-library-dialog';
 import { ApplyTemplateDialog } from './apply-template-dialog';
 import { DuplicateWorkItemDialog } from './duplicate-work-item-dialog';
 import { SaveTemplateDialog } from './save-template-dialog';
@@ -109,6 +110,13 @@ export function WorkItemActionsBar({
   const [editing, setEditing] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [applyingTemplate, setApplyingTemplate] = useState(false);
+  /*
+   * Which analysis the library entry lands on. Held here rather than chosen
+   * inside the dialog so the two buttons say plainly which one they mean —
+   * a published analysis copied into the wrong side of the estimate is a
+   * mistake nobody notices until the margin is wrong.
+   */
+  const [fromLibrary, setFromLibrary] = useState<'RAB' | 'RAP' | null>(null);
   const [duplicating, setDuplicating] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -119,6 +127,16 @@ export function WorkItemActionsBar({
       <Button variant="outline" size="sm" onClick={() => setApplyingTemplate(true)}>
         <LayoutTemplate className="size-4" aria-hidden />
         Terapkan template
+      </Button>
+
+      <Button variant="outline" size="sm" onClick={() => setFromLibrary('RAB')}>
+        <Library className="size-4" aria-hidden />
+        Pustaka → RAB
+      </Button>
+
+      <Button variant="outline" size="sm" onClick={() => setFromLibrary('RAP')}>
+        <Library className="size-4" aria-hidden />
+        Pustaka → RAP
       </Button>
 
       <Button
@@ -227,6 +245,17 @@ export function WorkItemActionsBar({
           lineCount={impact.ahspLines}
         />
       ) : null}
+
+      {fromLibrary === null ? null : (
+        <ApplyLibraryDialog
+          open
+          onOpenChange={(open) => !open && setFromLibrary(null)}
+          projectId={projectId}
+          workItemId={workItemId}
+          workItemName={workItemName}
+          estimateType={fromLibrary}
+        />
+      )}
 
       {applyingTemplate ? (
         <ApplyTemplateDialog

@@ -13,6 +13,7 @@ import {
   workItemFormSchema,
 } from '@/lib/validation/work-breakdown';
 import { deleteAhspLine, saveAhspLine } from '@/services/ahsp';
+import { applyLibraryEntry, listLibraryEntries } from '@/services/ahsp-library';
 import {
   applyTemplate,
   getTemplateLines,
@@ -360,5 +361,49 @@ export async function duplicateWorkItemAction(
     return { ok: true, id: created.id };
   } catch (error) {
     return failure(error) as DuplicateActionResult;
+  }
+}
+
+export type LibrarySearchResult =
+  | { ok: true; items: { id: string; code: string; name: string; unitCode: string; lineCount: number }[]; total: number }
+  | { ok: false; message: string };
+
+/**
+ * Searches the published library from the dialog.
+ *
+ * An action rather than a route handler: the search is only ever issued by
+ * this one dialog, and a route would be a second public surface to authorise.
+ */
+export async function searchLibraryAction(term: string): Promise<LibrarySearchResult> {
+  try {
+    const user = await requireSessionUser();
+    const { items, total } = await listLibraryEntries(user.id, { search: term, limit: 25 });
+    return { ok: true, items, total };
+  } catch (error) {
+    const { message } = toUserMessage(error);
+    return { ok: false, message };
+  }
+}
+
+export type ApplyLibraryActionResult =
+  | { ok: true; created: number; skippedExisting: number; unmatched: { resourceName: string; unitCode: string }[] }
+  | { ok: false; message: string; hint?: string };
+
+export async function applyLibraryEntryAction(
+  projectId: string,
+  workItemId: string,
+  entryId: string,
+  estimateType: 'RAB' | 'RAP',
+): Promise<ApplyLibraryActionResult> {
+  try {
+    const user = await requireSessionUser();
+    const result = await applyLibraryEntry(user, projectId, workItemId, entryId, estimateType);
+    revalidatePath(`/projects/${projectId}/work-items`);
+    revalidatePath(`/projects/${projectId}/estimate/rab`);
+    revalidatePath(`/projects/${projectId}/estimate/rap`);
+    return { ok: true, ...result };
+  } catch (error) {
+    const { message, hint } = toUserMessage(error);
+    return hint === undefined ? { ok: false, message } : { ok: false, message, hint };
   }
 }
