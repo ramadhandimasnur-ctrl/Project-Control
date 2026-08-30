@@ -204,6 +204,13 @@
       "when": 1788129106177,
       "tag": "0028_document_counters",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1788129422271,
+      "tag": "0029_central_warehouse",
+      "breakpoints": true
     }
   ]
 }

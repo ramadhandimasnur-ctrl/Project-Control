@@ -108,7 +108,7 @@ export async function saveWarehouse(
     if (id === null) {
       const [created] = await tx
         .insert(warehouses)
-        .values({ projectId, ...values, createdBy: user.id, updatedBy: user.id })
+        .values({ projectId, orgId: access.orgId, ...values, createdBy: user.id, updatedBy: user.id })
         .returning({ id: warehouses.id });
       if (!created) throw conflict('Gudang gagal dibuat.');
       id = created.id;

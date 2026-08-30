@@ -165,7 +165,16 @@ BEGIN
       ('project_signatories',       'pc_can_access_project(project_id)',            true),
       ('schedule_baselines',        'pc_can_access_project(project_id)',            true),
       ('progress_entries',          'pc_can_access_project(project_id)',            true),
-      ('warehouses',                'pc_can_access_project(project_id)',            true),
+      -- A warehouse with no project belongs to the organisation, and everyone in
+      -- the organisation can see it. Left on the project test alone, a central
+      -- store would be invisible to everybody: the policy fails closed on NULL.
+      ('warehouses',
+        '(project_id IS NULL AND pc_can_access_org(org_id)) OR pc_can_access_project(project_id)', true),
+      ('warehouse_receipts',
+        'EXISTS (SELECT 1 FROM public.warehouses w WHERE w.id = warehouse_id AND pc_can_access_org(w.org_id))', true),
+      -- Visible from either end: the store it left and the project it went to.
+      ('warehouse_allocations',
+        'pc_can_access_project(project_id) OR EXISTS (SELECT 1 FROM public.warehouses w WHERE w.id = warehouse_id AND pc_can_access_org(w.org_id))', true),
       ('purchases',                 'pc_can_access_project(project_id)',            true),
       ('material_transactions',     'pc_can_access_project(project_id)',            true),
       ('subcontracts',              'pc_can_access_project(project_id)',            true),

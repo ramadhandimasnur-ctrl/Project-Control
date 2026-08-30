@@ -245,3 +245,29 @@ DROP TRIGGER IF EXISTS trg_baseline_distributions_immutable ON public.baseline_d
 CREATE TRIGGER trg_baseline_distributions_immutable
   BEFORE UPDATE ON public.baseline_distributions
   FOR EACH ROW EXECUTE FUNCTION pc_baseline_immutable();
+
+-- ---------------------------------------------------------------------------
+-- warehouses.org_id fills itself from the project
+--
+-- A warehouse attached to a project always belongs to that project's
+-- organisation; asking every caller to say so again is asking to be told
+-- something already known, and it is the kind of thing that gets forgotten in
+-- a fixture, a script, or a migration written at speed.
+--
+-- Only a central warehouse — one with no project — has to name its own
+-- organisation, and there the column is genuinely carrying information.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION pc_warehouse_org_from_project() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.org_id IS NULL AND NEW.project_id IS NOT NULL THEN
+    SELECT p.org_id INTO NEW.org_id FROM public.projects p WHERE p.id = NEW.project_id;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_warehouse_org_from_project ON public.warehouses;
+CREATE TRIGGER trg_warehouse_org_from_project
+  BEFORE INSERT OR UPDATE ON public.warehouses
+  FOR EACH ROW EXECUTE FUNCTION pc_warehouse_org_from_project();

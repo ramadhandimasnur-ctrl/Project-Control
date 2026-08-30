@@ -10,9 +10,9 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { day, money, primaryId, quantity } from './_shared';
+import { day, money, percent, primaryId, quantity } from './_shared';
 import { materialTxnTypeEnum, purchaseStatusEnum } from './enums';
-import { auditColumns, users } from './org';
+import { auditColumns, organizations, users } from './org';
 import { projects } from './projects';
 import { resources, suppliers, units } from './resources';
 import { workItems } from './work';
@@ -21,12 +21,23 @@ export const warehouses = pgTable(
   'warehouses',
   {
     id: primaryId(),
-    projectId: uuid('project_id')
+    orgId: uuid('org_id')
       .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    /*
+     * Null means the organisation's own store, shared between projects.
+     *
+     * Buying in bulk for several sites is ordinary, and a warehouse that had to
+     * belong to exactly one project made a lorry-load of cement split three
+     * ways into three entries at three guessed quantities. What arrives at a
+     * central store is recorded once and handed out as it is needed.
+     */
+    projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     /** Where it physically stands, e.g. "Halaman belakang, dekat pos jaga". */
     location: text('location'),
+    city: text('city'),
+    address: text('address'),
     isDefault: boolean('is_default').notNull().default(false),
     ...auditColumns(),
   },
@@ -189,5 +200,88 @@ export const materialTransactions = pgTable(
       'material_transactions_void_has_reason',
       sql`${t.isVoid} = false OR ${t.voidReason} IS NOT NULL`,
     ),
+  ],
+);
+
+
+/**
+ * Goods arriving at a central store.
+ *
+ * Carries its own terms, because a bulk order is invoiced to the company and
+ * not to a site: it falls due whatever any one project happens to be doing.
+ * Project purchases keep using `purchases`, which knows about work items and
+ * project costing; this knows about neither, on purpose.
+ */
+export const warehouseReceipts = pgTable(
+  'warehouse_receipts',
+  {
+    id: primaryId(),
+    warehouseId: uuid('warehouse_id')
+      .notNull()
+      .references(() => warehouses.id, { onDelete: 'cascade' }),
+    supplierId: uuid('supplier_id').references(() => suppliers.id, { onDelete: 'set null' }),
+    resourceId: uuid('resource_id')
+      .notNull()
+      .references(() => resources.id, { onDelete: 'restrict' }),
+    docNo: text('doc_no'),
+    receiptDate: day('receipt_date').notNull(),
+    qty: quantity('qty').notNull(),
+    unitId: uuid('unit_id').references(() => units.id, { onDelete: 'restrict' }),
+    unitPrice: money('unit_price').notNull().default('0'),
+    vatPercent: percent('vat_percent').notNull().default('0'),
+    totalAmount: money('total_amount').notNull().default('0'),
+    dueDate: day('due_date'),
+    note: text('note'),
+    ...auditColumns(),
+  },
+  (t) => [
+    index('warehouse_receipts_warehouse_idx').on(t.warehouseId, t.receiptDate),
+    check('warehouse_receipts_qty_positive', sql`${t.qty} > 0`),
+    check(
+      'warehouse_receipts_amounts_nonneg',
+      sql`${t.unitPrice} >= 0 AND ${t.totalAmount} >= 0`,
+    ),
+    check(
+      'warehouse_receipts_due_after_receipt',
+      sql`${t.dueDate} IS NULL OR ${t.dueDate} >= ${t.receiptDate}`,
+    ),
+  ],
+);
+
+/**
+ * Central stock handed to a project.
+ *
+ * Issuing writes an ordinary IN movement on the receiving project's own
+ * warehouse — which is where material planning, stock and costing already
+ * look — and the movement's id is kept here. The two cannot drift, and undoing
+ * one undoes the other.
+ */
+export const warehouseAllocations = pgTable(
+  'warehouse_allocations',
+  {
+    id: primaryId(),
+    warehouseId: uuid('warehouse_id')
+      .notNull()
+      .references(() => warehouses.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    resourceId: uuid('resource_id')
+      .notNull()
+      .references(() => resources.id, { onDelete: 'restrict' }),
+    allocatedOn: day('allocated_on').notNull(),
+    qty: quantity('qty').notNull(),
+    unitCost: money('unit_cost').notNull().default('0'),
+    materialTransactionId: uuid('material_transaction_id').references(
+      () => materialTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    note: text('note'),
+    ...auditColumns(),
+  },
+  (t) => [
+    index('warehouse_allocations_warehouse_idx').on(t.warehouseId, t.allocatedOn),
+    index('warehouse_allocations_project_idx').on(t.projectId),
+    check('warehouse_allocations_qty_positive', sql`${t.qty} > 0`),
   ],
 );

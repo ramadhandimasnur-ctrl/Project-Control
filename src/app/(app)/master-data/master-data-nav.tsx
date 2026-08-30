@@ -1,6 +1,6 @@
 'use client';
 
-import { Boxes, Library, Ruler, Tags, Truck, type LucideIcon } from 'lucide-react';
+import { Boxes, Library, Ruler, Tags, Truck, Warehouse, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -12,6 +12,7 @@ const ICONS: Record<string, LucideIcon> = {
   ruler: Ruler,
   truck: Truck,
   library: Library,
+  warehouse: Warehouse,
 };
 
 export type MasterDataNavItem = {
