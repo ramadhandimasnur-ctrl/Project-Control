@@ -167,6 +167,18 @@ export function projectNavSections(projectId: string): NavSection[] {
       title: 'Laporan',
       items: [
         { label: 'Laporan & Terbitan', href: `${base}/reports`, icon: FileBarChart, phase: 9 },
+        /*
+         * The operational counterpart to opname. Opname is a contract document
+         * against RAB and gets signed; this one is for the people running the
+         * site, and reports where the money went.
+         */
+        {
+          label: 'Laporan RAP',
+          href: `${base}/reports/rap`,
+          icon: Receipt,
+          phase: 9,
+          requiresCostAccess: true,
+        },
         { label: 'Laporan Opname', href: `${base}/reports/opname`, icon: FileText, phase: 6 },
       ],
     },
