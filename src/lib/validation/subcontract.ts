@@ -84,7 +84,12 @@ export type AdvanceFormValues = z.output<typeof advanceFormSchema>;
 
 export const certificateFormSchema = z.object({
   periodId: z.string().uuid('Periode wajib dipilih.'),
-  certNo: requiredText('Nomor sertifikat', 60),
+  /*
+   * Optional: blank asks the project's certificate series for the next number.
+   * A certificate that arrives with the subcontractor's own reference on it
+   * keeps that reference instead.
+   */
+  certNo: z.string().trim().max(60, 'Nomor sertifikat terlalu panjang.').default(''),
   certDate: dayField('Tanggal sertifikat'),
   advanceRecouped: moneyField('Potongan kasbon').default('0'),
   lines: z

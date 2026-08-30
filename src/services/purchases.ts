@@ -24,6 +24,7 @@ import { conflict, notFound, validation } from '@/lib/errors';
 import { assertProjectAccess } from './access';
 import { writeAuditLog } from './audit';
 import { type SessionUser } from './session';
+import { nextDocumentNumber } from './document-numbers';
 
 /**
  * Purchasing, and the posting routine that turns a purchase into stock and
@@ -245,10 +246,20 @@ export async function saveDraftPurchase(
   return withUser(user.id, async (tx) => {
     let id = purchaseId;
 
+    /*
+     * A number is generated only for a new purchase that arrived without one.
+     * A document already carrying the supplier's own reference keeps it, and
+     * an edit never renumbers — the number is how the paperwork refers to it.
+     */
+    const poNo =
+      purchaseId === null && (header.poNo ?? '') === ''
+        ? await nextDocumentNumber(tx, projectId, 'PURCHASE')
+        : (header.poNo ?? null);
+
     const values = {
       projectId,
       supplierId: header.supplierId ?? null,
-      poNo: header.poNo ?? null,
+      poNo,
       invoiceNo: header.invoiceNo ?? null,
       purchaseDate: header.purchaseDate,
       dueDate: header.dueDate ?? null,

@@ -408,4 +408,66 @@ describe.skipIf(!ready)('borongan mandor', () => {
     expect(detail.advancesRecouped).toBe('1000000.00');
     expect(detail.advanceOutstanding).toBe('2000000.00');
   });
+
+  /*
+   * Numbers people quote to each other have to be unique, and left to people
+   * they are not: two site staff both type SC-02 on the same afternoon and
+   * neither finds out until the foreman asks which one he is being paid on.
+   */
+  describe('penomoran dokumen', () => {
+    it('memberi nomor berurutan saat nomornya dikosongkan', async () => {
+      const { id } = await contract('0');
+      const itemId = await firstItemId(id);
+
+      await service.createCertificate(user, projectId, id, {
+        periodId, certNo: '', certDate: '2026-01-31', advanceRecouped: '0',
+        lines: [{ subcontractItemId: itemId, qty: '10' }],
+      });
+      await service.createCertificate(user, projectId, id, {
+        periodId, certNo: '', certDate: '2026-02-28', advanceRecouped: '0',
+        lines: [{ subcontractItemId: itemId, qty: '10' }],
+      });
+
+      const detail = await service.getSubcontract(userId, projectId, id);
+      expect(detail.certificates.map((c) => c.certNo).sort()).toEqual(['SC-001', 'SC-002']);
+    });
+
+    // A document that arrives with the other party's own reference keeps it.
+    it('mempertahankan nomor yang diisi sendiri', async () => {
+      const { id } = await contract('0');
+      const itemId = await firstItemId(id);
+
+      await service.createCertificate(user, projectId, id, {
+        periodId, certNo: 'BA-LAPANGAN-7', certDate: '2026-01-31', advanceRecouped: '0',
+        lines: [{ subcontractItemId: itemId, qty: '10' }],
+      });
+
+      const detail = await service.getSubcontract(userId, projectId, id);
+      expect(detail.certificates[0]?.certNo).toBe('BA-LAPANGAN-7');
+    });
+
+    /*
+     * The counter must not advance for a certificate that never saved, or the
+     * series ends up full of holes nobody can explain to an auditor.
+     */
+    it('tidak menghabiskan nomor pada sertifikat yang gagal disimpan', async () => {
+      const { id } = await contract('0');
+      const itemId = await firstItemId(id);
+
+      await expect(
+        service.createCertificate(user, projectId, id, {
+          periodId, certNo: '', certDate: '2026-01-31', advanceRecouped: '0',
+          lines: [{ subcontractItemId: itemId, qty: '9999' }],
+        }),
+      ).rejects.toThrow();
+
+      await service.createCertificate(user, projectId, id, {
+        periodId, certNo: '', certDate: '2026-01-31', advanceRecouped: '0',
+        lines: [{ subcontractItemId: itemId, qty: '10' }],
+      });
+
+      const detail = await service.getSubcontract(userId, projectId, id);
+      expect(detail.certificates[0]?.certNo).toBe('SC-001');
+    });
+  });
 });

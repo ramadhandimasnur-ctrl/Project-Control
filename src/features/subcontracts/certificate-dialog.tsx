@@ -45,7 +45,12 @@ export function CertificateDialog({
   periods: { id: string; label: string }[];
 }) {
   const [periodId, setPeriodId] = useState(periods[0]?.id ?? '');
-  const [certNo, setCertNo] = useState(`SC-${String(subcontract.certificates.length + 1).padStart(2, '0')}`);
+  /*
+   * Blank by default: the project's certificate series numbers it on save.
+   * Counting the certificates already on screen would repeat a number as soon
+   * as one was deleted, and would collide outright with a second contract.
+   */
+  const [certNo, setCertNo] = useState('');
   const [certDate, setCertDate] = useState(todayIso());
   const [advanceRecouped, setAdvanceRecouped] = useState('0');
   const [qtyById, setQtyById] = useState<Record<string, string>>({});
@@ -98,7 +103,12 @@ export function CertificateDialog({
           <div className="grid gap-3 sm:grid-cols-4">
             <div className="space-y-1.5">
               <Label htmlFor="cert-no">Nomor</Label>
-              <Input id="cert-no" value={certNo} onChange={(e) => setCertNo(e.target.value)} />
+              <Input
+                id="cert-no"
+                placeholder="otomatis"
+                value={certNo}
+                onChange={(e) => setCertNo(e.target.value)}
+              />
               {errors.certNo ? <p className="text-sm text-destructive">{errors.certNo}</p> : null}
             </div>
             <div className="space-y-1.5">

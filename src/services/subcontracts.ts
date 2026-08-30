@@ -16,6 +16,7 @@ import { assertProjectAccess } from './access';
 import { writeAuditLog } from './audit';
 import { canViewOrgCosts } from './org-access';
 import { type SessionUser } from './session';
+import { nextDocumentNumber } from './document-numbers';
 
 /**
  * Piecework and subcontracting — "borongan mandor".
@@ -615,12 +616,19 @@ export async function createCertificate(
   }
 
   return withUser(user.id, async (tx) => {
+    // Blank means "number it for me". Taken inside the transaction, so a
+    // certificate that fails to save gives its number back.
+    const certNo =
+      input.certNo.trim() === ''
+        ? await nextDocumentNumber(tx, projectId, 'CERTIFICATE')
+        : input.certNo.trim();
+
     const [created] = await tx
       .insert(subcontractCertificates)
       .values({
         subcontractId,
         periodId: input.periodId,
-        certNo: input.certNo,
+        certNo,
         certDate: input.certDate,
         progressValue: progressValue.toFixed(2),
         advanceRecouped: requestedRecoup.toFixed(2),
@@ -656,7 +664,7 @@ export async function createCertificate(
       action: 'INSERT',
       before: null,
       after: {
-        certNo: input.certNo,
+        certNo,
         progressValue: progressValue.toFixed(2),
         netPayable: netPayable.toFixed(2),
       },

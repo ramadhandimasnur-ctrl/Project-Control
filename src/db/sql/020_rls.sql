@@ -143,6 +143,7 @@ BEGIN
       ('suppliers',                 'pc_can_access_org(org_id)',                    true),
       ('ahsp_templates',            'pc_can_access_org(org_id)',                    true),
       ('actual_costs',              'pc_can_access_project(project_id)',            true),
+      ('document_counters',         'pc_can_access_project(project_id)',            true),
       ('subcontract_certificate_lines',
         'EXISTS (SELECT 1 FROM public.subcontract_certificates c JOIN public.subcontracts s ON s.id = c.subcontract_id WHERE c.id = certificate_id AND pc_can_access_project(s.project_id))', true),
       ('ahsp_library_entries',      'pc_can_access_org(org_id)',                    true),
