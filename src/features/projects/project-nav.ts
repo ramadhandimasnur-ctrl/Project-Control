@@ -1,6 +1,7 @@
 import {
   Banknote,
   Calculator,
+  CalendarClock,
   CalendarRange,
   ClipboardCheck,
   FileBarChart,
@@ -98,6 +99,17 @@ export function projectNavSections(projectId: string): NavSection[] {
       items: [
         { label: 'Input Progres', href: `${base}/progress`, icon: ClipboardCheck, phase: 6 },
         { label: 'Kebutuhan Material', href: `${base}/material`, icon: Package, phase: 4 },
+        /*
+         * Separate from the material schedule on purpose: that one answers how
+         * much is still needed, this one answers by when it has to be ordered.
+         * Reading them together on one screen buried the deadline under stock.
+         */
+        {
+          label: 'Rencana Pengadaan',
+          href: `${base}/procurement`,
+          icon: CalendarClock,
+          phase: 4,
+        },
         { label: 'Gudang', href: `${base}/warehouse`, icon: Warehouse, phase: 4 },
         {
           label: 'Pembelian',

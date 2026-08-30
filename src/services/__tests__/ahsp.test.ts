@@ -444,6 +444,27 @@ describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
         expect(round2(row?.total_rap)).toBe(estimate.totalRap);
       });
 
+      /*
+       * The material schedule reads the same lines through a different path —
+       * lib/calc/material rather than the SQL view — and it is the path that
+       * decides what gets ordered. The two disagreeing means somebody buys the
+       * wrong amount, so they are checked against each other rather than each
+       * against its own expectation.
+       */
+      it('jadwal kebutuhan material memakai angka yang sama dengan view SQL', async () => {
+        const mr = await import('../material-requirement');
+        const summary = await mr.getMaterialRequirement(userId, projectId);
+        const line = summary.rows.find((r) => r.resourceCode === 'M.01');
+
+        const [view] = await sql`
+          SELECT qty_required FROM v_material_requirement
+          WHERE project_id = ${projectId} AND resource_code = 'M.01'
+        `;
+
+        expect(Number(line?.requirementTotal)).toBe(TYPED_QTY);
+        expect(Number(line?.requirementTotal)).toBe(Number(view?.qty_required));
+      });
+
       it('baris itu menyumbang tepat kebutuhan x harga pada total RAP', async () => {
         const estimate = await ahsp.getWorkItemEstimate(userId, projectId, workItemId);
         const line = estimate.lines.find(

@@ -22,6 +22,7 @@ import { assertProjectAccess } from './access';
 import { canViewOrgCosts } from './org-access';
 import { resolvePriceMap } from './prices';
 import { getSimulationCandidates } from './scope';
+import { effectiveCoefficient } from '@/lib/calc/estimate';
 
 /**
  * The material requirement table — charter section 6.5.
@@ -83,6 +84,7 @@ export async function getMaterialRequirement(
       volume: sql<string>`coalesce(${workItems.volumeRap}, ${workItems.volume})`,
       coefRap: workItemResources.coef,
       wasteFactor: workItemResources.wasteFactor,
+      qtyTyped: workItemResources.qty,
       resourceCode: resources.code,
       resourceName: resources.name,
       resourceSpec: resources.spec,
@@ -172,8 +174,17 @@ export async function getMaterialRequirement(
     list.push({
       workItemId: row.workItemId,
       volume: row.volume,
-      coefRap: row.coefRap,
-      wasteFactor: row.wasteFactor,
+      /*
+       * The effective coefficient, so a line written as a quantity is bought
+       * as that quantity. Waste is already inside it, which is why it is not
+       * passed on — applying it twice would order more than the number
+       * somebody wrote down.
+       */
+      coefRap: effectiveCoefficient(
+        { coef: row.coefRap, wasteFactor: row.wasteFactor, qty: row.qtyTyped },
+        row.volume,
+      ).toString(),
+      wasteFactor: '0',
     });
     linesBy.set(row.resourceId, list);
     metaBy.set(row.resourceId, row);
@@ -335,6 +346,7 @@ export async function getMaterialScope(
       volume: sql<string>`coalesce(${workItems.volumeRap}, ${workItems.volume})`,
       coefRap: workItemResources.coef,
       wasteFactor: workItemResources.wasteFactor,
+      qtyTyped: workItemResources.qty,
       resourceCode: resources.code,
       resourceName: resources.name,
       unitCode: units.code,
@@ -397,8 +409,12 @@ export async function getMaterialScope(
       resourceName: row.resourceName,
       unitCode: row.unitCode,
       volume: row.volume,
-      coefRap: row.coefRap,
-      wasteFactor: row.wasteFactor,
+      // As above: a typed quantity becomes a coefficient here, waste included.
+      coefRap: effectiveCoefficient(
+        { coef: row.coefRap, wasteFactor: row.wasteFactor, qty: row.qtyTyped },
+        row.volume,
+      ).toString(),
+      wasteFactor: '0',
       fraction: fractionOf.get(row.workItemId) ?? '0',
       priceRap: priceMap?.resolved.get(row.resourceId)?.price.toString() ?? null,
       stock: stockBy.get(row.resourceId) ?? '0',
