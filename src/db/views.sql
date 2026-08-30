@@ -52,6 +52,7 @@
 -- A resource with no price contributes zero rather than making the whole row
 -- null; `missing_price_count` is what tells the reader the total is partial.
 -- ---------------------------------------------------------------------------
+DROP VIEW IF EXISTS v_work_item_actual_cost CASCADE;
 DROP VIEW IF EXISTS v_material_requirement CASCADE;
 DROP VIEW IF EXISTS v_project_cost_summary CASCADE;
 DROP VIEW IF EXISTS v_work_item_weight CASCADE;
@@ -518,6 +519,50 @@ COMMENT ON VIEW v_resource_actual_price IS
 -- The application connects as app_runtime inside request transactions, so it
 -- needs read access to everything defined above.
 -- ---------------------------------------------------------------------------
+
+
+-- ---------------------------------------------------------------------------
+-- v_work_item_actual_cost — what each work item has actually consumed.
+--
+-- Two sources, kept apart and labelled rather than merged into one number.
+--
+--   ISSUE  material handed out of the warehouse against the item. Quantity,
+--          unit cost and the item are already recorded there, so booking it a
+--          second time by hand would produce two versions of one fact.
+--   BOOKED costs with no document of their own — labour, plant, a
+--          subcontractor's invoice — entered against the item directly.
+--
+-- Voided material movements are excluded, for the same reason a voided
+-- transaction does not appear in the cash ledger: it did not happen.
+-- ---------------------------------------------------------------------------
+CREATE VIEW v_work_item_actual_cost WITH (security_invoker = true) AS
+SELECT
+  mt.project_id,
+  mt.work_item_id,
+  'MATERIAL'::ahsp_role                      AS category,
+  'ISSUE'::text                              AS source,
+  sum(mt.qty * coalesce(mt.unit_cost, 0))    AS amount
+FROM material_transactions mt
+WHERE mt.txn_type = 'OUT'
+  AND NOT mt.is_void
+  AND mt.work_item_id IS NOT NULL
+GROUP BY mt.project_id, mt.work_item_id
+
+UNION ALL
+
+SELECT
+  ac.project_id,
+  ac.work_item_id,
+  ac.category,
+  'BOOKED'::text                             AS source,
+  sum(ac.amount)                             AS amount
+FROM actual_costs ac
+GROUP BY ac.project_id, ac.work_item_id, ac.category;
+
+COMMENT ON VIEW v_work_item_actual_cost IS
+  'Biaya aktual per pekerjaan: pengeluaran material dari gudang (ISSUE) dan biaya yang dicatat langsung (BOOKED).';
+
 GRANT SELECT ON v_work_item_cost, v_work_item_weight, v_project_cost_summary,
                 v_material_requirement, v_inventory_moving_cost,
-                v_inventory_balance, v_resource_actual_price TO app_runtime;
+                v_inventory_balance, v_resource_actual_price,
+                v_work_item_actual_cost TO app_runtime;

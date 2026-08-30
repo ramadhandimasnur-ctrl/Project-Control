@@ -9,12 +9,13 @@ import {
   LayoutDashboard,
   Package,
   Receipt,
+  Scale,
   Settings,
   Sigma,
+  type LucideIcon,
   Users,
   Wallet,
   Warehouse,
-  type LucideIcon,
 } from 'lucide-react';
 
 import { canViewCosts, type ProjectRole } from '@/lib/auth/roles';
@@ -115,6 +116,18 @@ export function projectNavSections(projectId: string): NavSection[] {
           label: 'Kebutuhan Modal',
           href: `${base}/capital`,
           icon: Banknote,
+          phase: 7,
+          requiresCostAccess: true,
+        },
+        /*
+         * Cost control sits beside the money it reports on, not under
+         * reporting. It is a screen somebody acts from — the item with the
+         * worst CPI is the one to go and look at this week.
+         */
+        {
+          label: 'Kendali Biaya',
+          href: `${base}/costs`,
+          icon: Scale,
           phase: 7,
           requiresCostAccess: true,
         },

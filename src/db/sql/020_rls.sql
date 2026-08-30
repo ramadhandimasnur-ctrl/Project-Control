@@ -142,6 +142,7 @@ BEGIN
       ('resources',                 'pc_can_access_org(org_id)',                    true),
       ('suppliers',                 'pc_can_access_org(org_id)',                    true),
       ('ahsp_templates',            'pc_can_access_org(org_id)',                    true),
+      ('actual_costs',              'pc_can_access_project(project_id)',            true),
       ('ahsp_library_entries',      'pc_can_access_org(org_id)',                    true),
       ('ahsp_library_items',
         'EXISTS (SELECT 1 FROM public.ahsp_library_entries e WHERE e.id = entry_id AND pc_can_access_org(e.org_id))', true),

@@ -14,5 +14,6 @@ export * from './progress';
 export * from './inventory';
 export * from './subcontract';
 export * from './cash';
+export * from './costs';
 export * from './reporting';
 export * from './contract';
