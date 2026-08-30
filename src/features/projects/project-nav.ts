@@ -7,6 +7,7 @@ import {
   FileBarChart,
   FileDiff,
   FileText,
+  HardHat,
   LayoutDashboard,
   Package,
   Receipt,
@@ -136,6 +137,18 @@ export function projectNavSections(projectId: string): NavSection[] {
          * reporting. It is a screen somebody acts from — the item with the
          * worst CPI is the one to go and look at this week.
          */
+        /*
+         * After material, this is the largest cash stream on a site, and the
+         * one most often run on paper. It sits under finance because that is
+         * what it is: money out against work measured.
+         */
+        {
+          label: 'Borongan & Mandor',
+          href: `${base}/subcontracts`,
+          icon: HardHat,
+          phase: 7,
+          requiresCostAccess: true,
+        },
         {
           label: 'Kendali Biaya',
           href: `${base}/costs`,

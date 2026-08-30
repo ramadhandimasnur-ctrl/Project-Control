@@ -6,6 +6,7 @@ import { ahspRoleEnum } from './enums';
 import { auditColumns } from './org';
 import { projects } from './projects';
 import { resources } from './resources';
+import { subcontractCertificates } from './subcontract';
 import { workItems } from './work';
 
 /**
@@ -46,6 +47,17 @@ export const actualCosts = pgTable(
     qty: quantity('qty'),
     unitCost: money('unit_cost'),
     amount: money('amount').notNull(),
+    /*
+     * The certificate that produced this cost, when one did.
+     *
+     * Approving a certificate books its value here; approving it again replaces
+     * that booking rather than adding a second copy. Without the link the only
+     * way to tell one from the other would be matching on amount and date.
+     */
+    subcontractCertificateId: uuid('subcontract_certificate_id').references(
+      () => subcontractCertificates.id,
+      { onDelete: 'cascade' },
+    ),
     /** Where this came from: an invoice number, a certificate, a payroll run. */
     sourceRef: text('source_ref'),
     note: text('note'),

@@ -119,3 +119,44 @@ export const subcontractCertificates = pgTable(
     ),
   ],
 );
+
+/**
+ * What a certificate actually certifies, item by item.
+ *
+ * The header carries one value; the line carries the measurement behind it —
+ * how much of which item, at which rate. A certificate without lines is a
+ * number somebody agreed to with nothing underneath to check it against, and
+ * the whole argument in a piecework dispute is about the measurement.
+ */
+export const subcontractCertificateLines = pgTable(
+  'subcontract_certificate_lines',
+  {
+    id: primaryId(),
+    certificateId: uuid('certificate_id')
+      .notNull()
+      .references(() => subcontractCertificates.id, { onDelete: 'cascade' }),
+    subcontractItemId: uuid('subcontract_item_id').references(() => subcontractItems.id, {
+      onDelete: 'set null',
+    }),
+    workItemId: uuid('work_item_id').references(() => workItems.id, { onDelete: 'set null' }),
+    description: text('description').notNull(),
+    qty: quantity('qty').notNull().default('0'),
+    /*
+     * Frozen when the certificate is raised.
+     *
+     * Read live from the contract item, a rate renegotiated in June would
+     * rewrite what was certified in March — and a certificate that changes
+     * after it was signed is not a certificate.
+     */
+    unitRate: money('unit_rate').notNull().default('0'),
+    amount: money('amount').notNull().default('0'),
+    ...auditColumns(),
+  },
+  (t) => [
+    index('subcontract_certificate_lines_cert_idx').on(t.certificateId),
+    check(
+      'subcontract_certificate_lines_nonneg',
+      sql`${t.qty} >= 0 AND ${t.unitRate} >= 0 AND ${t.amount} >= 0`,
+    ),
+  ],
+);

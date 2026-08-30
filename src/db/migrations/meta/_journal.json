@@ -190,6 +190,13 @@
       "when": 1788114133880,
       "tag": "0026_cco_schedule_impact",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1788128297868,
+      "tag": "0027_subcontract_certificate_lines",
+      "breakpoints": true
     }
   ]
 }
