@@ -50,6 +50,12 @@ export const progressEntryFormSchema = z
         return String(value / 100);
       }),
     entryDate: dayField('Tanggal catat'),
+    /*
+     * Where on site this was measured. Kept apart from the note rather than
+     * folded into it, because it is the field an opname argument turns on and
+     * a free-text note is where such things go to be lost.
+     */
+    location: optionalText(200),
     note: optionalText(500),
   })
   .refine((v) => (v.method === 'VOLUME' ? v.qtyThisPeriod !== null : v.pctInput !== null), {

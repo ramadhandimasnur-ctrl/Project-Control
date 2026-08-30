@@ -74,6 +74,7 @@ export type ProgressBoardRow = {
   qtyThisPeriod: string;
   pctThisPeriod: string;
   status: ProgressStatusValue | null;
+  location: string | null;
   note: string | null;
   rejectReason: string | null;
   /** Approved completion from every other period. */
@@ -193,6 +194,7 @@ export async function getProgressBoard(
       qtyThisPeriod: progressEntries.qtyThisPeriod,
       pctThisPeriod: progressEntries.pctThisPeriod,
       status: progressEntries.status,
+      location: progressEntries.location,
       note: progressEntries.note,
       rejectReason: progressEntries.rejectReason,
     })
@@ -306,6 +308,7 @@ export async function getProgressBoard(
       qtyThisPeriod: entry?.qtyThisPeriod ?? '0',
       pctThisPeriod: entry?.pctThisPeriod ?? '0',
       status: entry?.status ?? null,
+      location: entry?.location ?? null,
       note: entry?.note ?? null,
       rejectReason: entry?.rejectReason ?? null,
       completedBefore: before.toString(),
@@ -360,6 +363,8 @@ export type ProgressEntryInput = {
   qtyThisPeriod: string | null;
   pctThisPeriod: string | null;
   entryDate: string;
+  /** Where on site it was measured, e.g. "Lantai 2, as A-B". */
+  location: string | null;
   note: string | null;
 };
 
@@ -444,6 +449,7 @@ export async function saveProgressEntry(
       pctThisPeriod: toPercentString(derived.pctThisPeriod),
       method: input.method,
       status: 'DRAFT' as const,
+      location: input.location,
       note: input.note,
       // A rejected entry that is edited starts clean rather than carrying the
       // old reason next to new numbers.

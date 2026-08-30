@@ -45,6 +45,15 @@ export const progressEntries = pgTable(
     method: progressMethodEnum('method').notNull(),
 
     status: progressStatusEnum('status').notNull().default('DRAFT'),
+    /*
+     * Where on site it was measured — "Lantai 2, as A-B".
+     *
+     * What makes an opname entry checkable a month later. Without it two
+     * entries against the same work item in the same period are
+     * indistinguishable, and the argument about whether one of them was
+     * already counted has no evidence either way.
+     */
+    location: text('location'),
     submittedBy: uuid('submitted_by').references(() => users.id, { onDelete: 'set null' }),
     submittedAt: timestamp('submitted_at', { withTimezone: true, mode: 'date' }),
     approvedBy: uuid('approved_by').references(() => users.id, { onDelete: 'set null' }),

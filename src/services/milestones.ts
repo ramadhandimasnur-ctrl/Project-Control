@@ -230,6 +230,8 @@ export async function recordMilestoneProgress(
     qtyThisPeriod: null,
     pctThisPeriod: pctThisPeriod.toString(),
     entryDate: input.entryDate,
+    // A milestone is the location: the stage that was reached names itself.
+    location: null,
     note: input.note,
   });
 

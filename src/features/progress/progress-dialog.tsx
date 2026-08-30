@@ -66,6 +66,7 @@ export function ProgressDialog({
           ? toDecimal(row.pctThisPeriod).times(100).toNumber()
           : '',
       entryDate: new Date().toISOString().slice(0, 10),
+      location: row.location ?? '',
       note: row.note ?? '',
     },
     mode: 'onBlur',
@@ -187,6 +188,20 @@ export function ProgressDialog({
             type="date"
             error={messageOf('entryDate')}
             registration={register('entryDate')}
+          />
+
+          {/*
+            Kept apart from the note, because it is the field an opname
+            argument turns on: two entries against the same item in the same
+            period are otherwise indistinguishable, and a free-text note is
+            where such things go to be lost.
+          */}
+          <TextField
+            id="progress-location"
+            label="Lokasi"
+            hint="Contoh: Lantai 2, as A-B. Membuat catatan ini dapat diperiksa ulang sebulan kemudian."
+            error={messageOf('location')}
+            registration={register('location')}
           />
 
           <TextAreaField

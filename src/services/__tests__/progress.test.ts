@@ -152,6 +152,7 @@ describe.skipIf(!ready)('Progres lapangan', () => {
       qtyThisPeriod: null,
       pctThisPeriod: '1',
       entryDate: '2026-01-31',
+      location: null,
       note: null,
       ...input,
     });

@@ -177,7 +177,17 @@ export default async function OpnameReportPage({
                 {reported.map((row) => (
                   <TableRow key={row.workItemId} data-print="keep-together">
                     <TableCell className="font-mono text-xs">{row.code}</TableCell>
-                    <TableCell>{row.name}</TableCell>
+                    <TableCell>
+                      {row.name}
+                      {/*
+                        On the sheet that gets signed, because that is where the
+                        question is asked: which part of the building this
+                        entry measured.
+                      */}
+                      {row.location === null ? null : (
+                        <span className="block text-xs text-muted-foreground">{row.location}</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{row.unitCode}</TableCell>
                     <TableCell className="text-right font-mono tabular-nums">
                       {formatQuantity(row.qtyThisPeriod)}

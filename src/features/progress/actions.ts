@@ -66,6 +66,7 @@ export async function saveProgressAction(
       qtyThisPeriod: parsed.data.qtyThisPeriod,
       pctThisPeriod: parsed.data.pctInput,
       entryDate: parsed.data.entryDate,
+      location: parsed.data.location,
       note: parsed.data.note,
     });
   } catch (error) {

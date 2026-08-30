@@ -38,6 +38,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               Shown to administrators only. The page enforces this for itself —
               this merely avoids offering a link that answers with a refusal.
             */}
+            {/*
+              Last in the row, and always present. A guide that only appears
+              for administrators is a guide the people with the most questions
+              cannot reach.
+            */}
+            <Link
+              href="/help"
+              className="rounded-md px-2 py-1.5 text-foreground/80 transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              Petunjuk
+            </Link>
             {user.globalRole === 'ADMIN' ? (
               <Link
                 href="/users"

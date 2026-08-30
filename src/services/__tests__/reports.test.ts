@@ -104,6 +104,7 @@ describe.skipIf(!ready)('Laporan terbit', () => {
       qtyThisPeriod: null,
       pctThisPeriod: pct,
       entryDate: '2026-01-31',
+      location: null,
       note: null,
     });
     const [entry] = await progress.listEntriesForPeriod(userId, projectId, periodId);
