@@ -24,6 +24,8 @@ import { TERM_TYPE_LABELS } from '@/lib/validation/cash';
 import { getCashflow, listCashAccounts, listClaims, listPaymentTerms } from '@/services/cash';
 import { getProject } from '@/services/projects';
 import { requireSessionUser } from '@/services/session';
+import { PayablesTable } from '@/features/cash/payables-table';
+import { getPayables } from '@/services/payables';
 
 export const metadata: Metadata = { title: 'Kas & Termin' };
 
@@ -41,11 +43,14 @@ export default async function CashPage({ params }: { params: Promise<{ id: strin
   const project = await getProject(user.id, projectId);
   const canManage = canEditContractTerms(project.role);
 
-  const [accounts, terms, claims, cashflow] = await Promise.all([
+  const [accounts, terms, claims, cashflow, payables] = await Promise.all([
     listCashAccounts(user.id, projectId),
     listPaymentTerms(user.id, projectId),
     listClaims(user.id, projectId),
     getCashflow(user.id, projectId),
+    // What the project owes, beside what it is owed. A forecast built from one
+    // side of that is not a forecast.
+    getPayables(user.id, projectId),
   ]);
 
   const accountOptions = accounts.map((account) => ({ id: account.id, name: account.name }));
@@ -378,6 +383,9 @@ export default async function CashPage({ params }: { params: Promise<{ id: strin
           ) : null}
         </>
       )}
+      {/* What the project owes, beside what it is owed. */}
+      <PayablesTable payables={payables} />
+
     </div>
   );
 }

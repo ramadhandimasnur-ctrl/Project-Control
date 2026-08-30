@@ -52,6 +52,7 @@
 -- A resource with no price contributes zero rather than making the whole row
 -- null; `missing_price_count` is what tells the reader the total is partial.
 -- ---------------------------------------------------------------------------
+DROP VIEW IF EXISTS v_payables CASCADE;
 DROP VIEW IF EXISTS v_work_item_actual_cost CASCADE;
 DROP VIEW IF EXISTS v_material_requirement CASCADE;
 DROP VIEW IF EXISTS v_project_cost_summary CASCADE;
@@ -562,7 +563,58 @@ GROUP BY ac.project_id, ac.work_item_id, ac.category;
 COMMENT ON VIEW v_work_item_actual_cost IS
   'Biaya aktual per pekerjaan: pengeluaran material dari gudang (ISSUE) dan biaya yang dicatat langsung (BOOKED).';
 
+
+
+-- ---------------------------------------------------------------------------
+-- v_payables — everything the project owes and has not yet paid.
+--
+-- A view, not a table. Excel kept a payables ledger written alongside every
+-- purchase and every certificate, which meant two records of one obligation
+-- and a standing chance of them disagreeing. The documents already know what
+-- is owed and whether it has been settled; this only gathers them.
+--
+-- Draft documents are excluded. A purchase order still being typed is not a
+-- debt, and putting it in a cash forecast would have the project planning
+-- around money it has not committed.
+-- ---------------------------------------------------------------------------
+CREATE VIEW v_payables WITH (security_invoker = true) AS
+SELECT
+  p.id                                   AS source_id,
+  p.project_id,
+  'PURCHASE'::text                       AS source_type,
+  coalesce(p.invoice_no, p.po_no)        AS reference,
+  s.name                                 AS counterparty,
+  p.purchase_date                        AS issued_on,
+  p.due_date,
+  p.total_amount                         AS amount_due,
+  p.paid_at
+FROM purchases p
+LEFT JOIN suppliers s ON s.id = p.supplier_id
+WHERE p.status = 'POSTED'
+
+UNION ALL
+
+-- A certificate is a debt once it is approved: the work has been measured and
+-- accepted, and the only thing still outstanding is the payment.
+SELECT
+  c.id                                   AS source_id,
+  sc.project_id,
+  'SUBCONTRACT'::text                    AS source_type,
+  c.cert_no                              AS reference,
+  sc.party_name                          AS counterparty,
+  c.cert_date                            AS issued_on,
+  NULL::date                             AS due_date,
+  c.net_payable                          AS amount_due,
+  c.paid_at
+FROM subcontract_certificates c
+JOIN subcontracts sc ON sc.id = c.subcontract_id
+WHERE c.status IN ('APPROVED', 'PAID');
+
+COMMENT ON VIEW v_payables IS
+  'Kewajiban proyek yang sudah terbit: pembelian yang sudah diposting dan sertifikat subkon yang sudah disetujui.';
+
 GRANT SELECT ON v_work_item_cost, v_work_item_weight, v_project_cost_summary,
                 v_material_requirement, v_inventory_moving_cost,
                 v_inventory_balance, v_resource_actual_price,
-                v_work_item_actual_cost TO app_runtime;
+                v_work_item_actual_cost,
+                v_payables TO app_runtime;

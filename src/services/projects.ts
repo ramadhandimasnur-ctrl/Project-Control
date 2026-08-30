@@ -263,6 +263,21 @@ export async function deleteProject(user: SessionUser, projectId: string): Promi
     // and it lasts only for this transaction.
     await tx.execute(sql`SELECT set_config('app.allow_hard_delete', 'on', true)`);
 
+    /*
+     * Subcontract certificates go first, by hand.
+     *
+     * A certificate holds its schedule period with ON DELETE RESTRICT, which is
+     * right on its own terms — deleting one period out from under a certificate
+     * would leave it unable to say which month it certified. But the project
+     * cascade reaches both the certificates and the periods, and Postgres does
+     * not promise to arrive at them in that order, so the delete could fail on
+     * a constraint that was never meant to guard this case.
+     */
+    await tx.execute(sql`
+      DELETE FROM subcontract_certificates
+      WHERE subcontract_id IN (SELECT id FROM subcontracts WHERE project_id = ${projectId})
+    `);
+
     // Written before the delete: the audit row references the project, and the
     // cascade would otherwise remove it along with everything else.
     await writeAuditLog(tx, {
