@@ -7,6 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { connectionOptions } from '@/db/connection';
 import { type UtbaParseResult } from '@/lib/import/utba';
 import type { importUtba as ImportUtbaFn } from '../import-utba';
+import { guardDatabase, probeSchema } from './_support/schema-probe';
 
 /**
  * Persistence tests for the UTBA import.
@@ -22,26 +23,18 @@ loadEnv({ path: '.env', quiet: true });
 
 const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
-async function schemaIsReady(): Promise<boolean> {
-  if (!url) return false;
-  const probe = postgres(connectionOptions(url, { max: 1, prepare: false, connect_timeout: 5 }));
-  try {
-    const rows = await probe`
-      SELECT count(*)::int AS n FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name IN ('resources', 'resource_prices')
-    `;
-    return rows[0]?.n === 2;
-  } catch {
-    return false;
-  } finally {
-    await probe.end();
-  }
-}
+const probe = await probeSchema('impor UTBA', async (db) => {
+  const rows = await db`
+    SELECT count(*)::int AS n FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name IN ('resources', 'resource_prices')
+  `;
+  return rows[0]?.n === 2;
+});
 
-const ready = await schemaIsReady();
-if (!ready) {
-  console.warn('[impor UTBA] Dilewati: database belum tersedia. Jalankan npm run db:setup.');
-}
+// A configured database that cannot be reached is a failure, not a skip:
+// a suite that verified nothing must not look as though it had.
+guardDatabase('impor UTBA', probe);
+const ready = probe.ready;
 
 /** A miniature sheet: one labour block, one material block, three rows. */
 function fixture(overrides: Partial<UtbaParseResult> = {}): UtbaParseResult {

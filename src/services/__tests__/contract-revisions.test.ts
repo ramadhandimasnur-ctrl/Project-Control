@@ -7,6 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { connectionOptions } from '@/db/connection';
 import type * as RevisionsModule from '../contract-revisions';
 import type { SessionUser } from '../session';
+import { guardDatabase, probeSchema } from './_support/schema-probe';
 
 /**
  * Change orders end to end: draft, approve, and what approval does to the
@@ -23,25 +24,19 @@ loadEnv({ path: '.env', quiet: true });
 
 const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
-async function schemaIsReady(): Promise<boolean> {
-  if (!url) return false;
-  const probe = postgres(connectionOptions(url, { max: 1, prepare: false, connect_timeout: 5 }));
-  try {
-    const rows = await probe`
-      SELECT count(*)::int AS n FROM information_schema.tables
-      WHERE table_schema = 'public'
-        AND table_name IN ('contract_revisions', 'contract_baselines')
-    `;
-    return rows[0]?.n === 2;
-  } catch {
-    return false;
-  } finally {
-    await probe.end();
-  }
-}
+const probe = await probeSchema('CCO', async (db) => {
+  const rows = await db`
+    SELECT count(*)::int AS n FROM information_schema.tables
+    WHERE table_schema = 'public'
+      AND table_name IN ('contract_revisions', 'contract_baselines')
+  `;
+  return rows[0]?.n === 2;
+});
 
-const ready = await schemaIsReady();
-if (!ready) console.warn('[CCO] Dilewati: database belum tersedia.');
+// A configured database that cannot be reached is a failure, not a skip:
+// a suite that verified nothing must not look as though it had.
+guardDatabase('CCO', probe);
+const ready = probe.ready;
 
 describe.skipIf(!ready)('pekerjaan tambah/kurang', () => {
   let sql: postgres.Sql;

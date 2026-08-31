@@ -8,6 +8,7 @@ import { connectionOptions } from '@/db/connection';
 
 import type * as SubcontractsModule from '../subcontracts';
 import type { SessionUser } from '../session';
+import { guardDatabase, probeSchema } from './_support/schema-probe';
 
 /**
  * Piecework, end to end.
@@ -24,24 +25,18 @@ loadEnv({ path: '.env', quiet: true });
 
 const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
-async function schemaIsReady(): Promise<boolean> {
-  if (!url) return false;
-  const probe = postgres(connectionOptions(url, { max: 1, prepare: false, connect_timeout: 5 }));
-  try {
-    const rows = await probe`
-      SELECT count(*)::int AS n FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = 'subcontract_certificate_lines'
-    `;
-    return rows[0]?.n === 1;
-  } catch {
-    return false;
-  } finally {
-    await probe.end();
-  }
-}
+const probe = await probeSchema('BORONGAN', async (db) => {
+  const rows = await db`
+    SELECT count(*)::int AS n FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'subcontract_certificate_lines'
+  `;
+  return rows[0]?.n === 1;
+});
 
-const ready = await schemaIsReady();
-if (!ready) console.warn('[BORONGAN] Dilewati: database belum tersedia.');
+// A configured database that cannot be reached is a failure, not a skip:
+// a suite that verified nothing must not look as though it had.
+guardDatabase('BORONGAN', probe);
+const ready = probe.ready;
 
 describe.skipIf(!ready)('borongan mandor', () => {
   let sql: postgres.Sql;

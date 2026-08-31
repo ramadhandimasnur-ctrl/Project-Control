@@ -10,6 +10,7 @@ import type * as AhspTemplatesModule from '../ahsp-templates';
 import type { SessionUser } from '../session';
 import type * as TakeoffsModule from '../takeoffs';
 import type * as WorkBreakdownModule from '../work-breakdown';
+import { guardDatabase, probeSchema } from './_support/schema-probe';
 
 /**
  * End-to-end check of the estimate: resources and prices in the catalogue,
@@ -25,24 +26,18 @@ loadEnv({ path: '.env', quiet: true });
 
 const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
-async function schemaIsReady(): Promise<boolean> {
-  if (!url) return false;
-  const probe = postgres(connectionOptions(url, { max: 1, prepare: false, connect_timeout: 5 }));
-  try {
-    const rows = await probe`
-      SELECT count(*)::int AS n FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name IN ('work_items', 'work_item_resources')
-    `;
-    return rows[0]?.n === 2;
-  } catch {
-    return false;
-  } finally {
-    await probe.end();
-  }
-}
+const probe = await probeSchema('AHSP', async (db) => {
+  const rows = await db`
+    SELECT count(*)::int AS n FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name IN ('work_items', 'work_item_resources')
+  `;
+  return rows[0]?.n === 2;
+});
 
-const ready = await schemaIsReady();
-if (!ready) console.warn('[AHSP] Dilewati: database belum tersedia.');
+// A configured database that cannot be reached is a failure, not a skip:
+// a suite that verified nothing must not look as though it had.
+guardDatabase('AHSP', probe);
+const ready = probe.ready;
 
 describe.skipIf(!ready)('AHSP dan RAB/RAP', () => {
   let sql: postgres.Sql;

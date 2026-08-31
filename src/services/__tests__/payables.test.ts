@@ -7,6 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { connectionOptions } from '@/db/connection';
 
 import type * as PayablesModule from '../payables';
+import { guardDatabase, probeSchema } from './_support/schema-probe';
 
 /**
  * What the project owes, across the documents that owe it.
@@ -21,24 +22,18 @@ loadEnv({ path: '.env', quiet: true });
 
 const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
-async function schemaIsReady(): Promise<boolean> {
-  if (!url) return false;
-  const probe = postgres(connectionOptions(url, { max: 1, prepare: false, connect_timeout: 5 }));
-  try {
-    const rows = await probe`
-      SELECT count(*)::int AS n FROM information_schema.views
-      WHERE table_schema = 'public' AND table_name = 'v_payables'
-    `;
-    return rows[0]?.n === 1;
-  } catch {
-    return false;
-  } finally {
-    await probe.end();
-  }
-}
+const probe = await probeSchema('HUTANG', async (db) => {
+  const rows = await db`
+    SELECT count(*)::int AS n FROM information_schema.views
+    WHERE table_schema = 'public' AND table_name = 'v_payables'
+  `;
+  return rows[0]?.n === 1;
+});
 
-const ready = await schemaIsReady();
-if (!ready) console.warn('[HUTANG] Dilewati: database belum tersedia.');
+// A configured database that cannot be reached is a failure, not a skip:
+// a suite that verified nothing must not look as though it had.
+guardDatabase('HUTANG', probe);
+const ready = probe.ready;
 
 describe.skipIf(!ready)('buku hutang proyek', () => {
   let sql: postgres.Sql;

@@ -8,6 +8,7 @@ import { connectionOptions } from '@/db/connection';
 
 import type * as CostsModule from '../costs';
 import type { SessionUser } from '../session';
+import { guardDatabase, probeSchema } from './_support/schema-probe';
 
 /**
  * Cost control at the level of a work item.
@@ -24,28 +25,22 @@ loadEnv({ path: '.env', quiet: true });
 
 const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
-async function schemaIsReady(): Promise<boolean> {
-  if (!url) return false;
-  const probe = postgres(connectionOptions(url, { max: 1, prepare: false, connect_timeout: 5 }));
-  try {
-    const rows = await probe`
-      SELECT count(*)::int AS n FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = 'actual_costs'
-    `;
-    const views = await probe`
-      SELECT count(*)::int AS n FROM information_schema.views
-      WHERE table_schema = 'public' AND table_name = 'v_work_item_actual_cost'
-    `;
-    return rows[0]?.n === 1 && views[0]?.n === 1;
-  } catch {
-    return false;
-  } finally {
-    await probe.end();
-  }
-}
+const probe = await probeSchema('BIAYA', async (db) => {
+  const rows = await db`
+    SELECT count(*)::int AS n FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'actual_costs'
+  `;
+  const views = await db`
+    SELECT count(*)::int AS n FROM information_schema.views
+    WHERE table_schema = 'public' AND table_name = 'v_work_item_actual_cost'
+  `;
+  return rows[0]?.n === 1 && views[0]?.n === 1;
+});
 
-const ready = await schemaIsReady();
-if (!ready) console.warn('[BIAYA] Dilewati: database belum tersedia.');
+// A configured database that cannot be reached is a failure, not a skip:
+// a suite that verified nothing must not look as though it had.
+guardDatabase('BIAYA', probe);
+const ready = probe.ready;
 
 describe.skipIf(!ready)('kendali biaya per pekerjaan', () => {
   let sql: postgres.Sql;

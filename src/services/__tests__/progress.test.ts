@@ -8,6 +8,7 @@ import { connectionOptions } from '@/db/connection';
 import type * as ProgressModule from '../progress';
 import type * as ScheduleModule from '../schedule';
 import type { SessionUser } from '../session';
+import { guardDatabase, probeSchema } from './_support/schema-probe';
 
 /**
  * Phase 6's definition of done: only approved progress moves the realised
@@ -20,25 +21,19 @@ loadEnv({ path: '.env', quiet: true });
 
 const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
-async function schemaIsReady(): Promise<boolean> {
-  if (!url) return false;
-  const probe = postgres(connectionOptions(url, { max: 1, prepare: false, connect_timeout: 5 }));
-  try {
-    const rows = await probe`
-      SELECT count(*)::int AS n FROM information_schema.tables
-      WHERE table_schema = 'public'
-        AND table_name IN ('progress_entries', 'work_item_checklists', 'schedule_periods')
-    `;
-    return rows[0]?.n === 3;
-  } catch {
-    return false;
-  } finally {
-    await probe.end();
-  }
-}
+const probe = await probeSchema('Progres', async (db) => {
+  const rows = await db`
+    SELECT count(*)::int AS n FROM information_schema.tables
+    WHERE table_schema = 'public'
+      AND table_name IN ('progress_entries', 'work_item_checklists', 'schedule_periods')
+  `;
+  return rows[0]?.n === 3;
+});
 
-const ready = await schemaIsReady();
-if (!ready) console.warn('[Progres] Dilewati: database belum tersedia.');
+// A configured database that cannot be reached is a failure, not a skip:
+// a suite that verified nothing must not look as though it had.
+guardDatabase('Progres', probe);
+const ready = probe.ready;
 
 describe.skipIf(!ready)('Progres lapangan', () => {
   let sql: postgres.Sql;

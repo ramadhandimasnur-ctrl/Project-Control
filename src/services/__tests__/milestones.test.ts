@@ -8,6 +8,7 @@ import { connectionOptions } from '@/db/connection';
 import type * as MilestoneModule from '../milestones';
 import type * as ScheduleModule from '../schedule';
 import type { SessionUser } from '../session';
+import { guardDatabase, probeSchema } from './_support/schema-probe';
 
 /**
  * Milestone-driven progress.
@@ -21,25 +22,19 @@ loadEnv({ path: '.env', quiet: true });
 
 const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
-async function schemaIsReady(): Promise<boolean> {
-  if (!url) return false;
-  const probe = postgres(connectionOptions(url, { max: 1, prepare: false, connect_timeout: 10 }));
-  try {
-    const rows = await probe`
-      SELECT count(*)::int AS n FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = 'work_item_milestones'
-        AND column_name = 'completed_at'
-    `;
-    return rows[0]?.n === 1;
-  } catch {
-    return false;
-  } finally {
-    await probe.end();
-  }
-}
+const probe = await probeSchema('Tahapan', async (db) => {
+  const rows = await db`
+    SELECT count(*)::int AS n FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'work_item_milestones'
+      AND column_name = 'completed_at'
+  `;
+  return rows[0]?.n === 1;
+});
 
-const ready = await schemaIsReady();
-if (!ready) console.warn('[Tahapan] Dilewati: database belum tersedia.');
+// A configured database that cannot be reached is a failure, not a skip:
+// a suite that verified nothing must not look as though it had.
+guardDatabase('Tahapan', probe);
+const ready = probe.ready;
 
 describe.skipIf(!ready)('Tahapan pekerjaan', () => {
   let sql: postgres.Sql;
