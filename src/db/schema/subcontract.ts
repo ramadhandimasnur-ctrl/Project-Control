@@ -3,6 +3,7 @@ import { check, index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-c
 
 import { day, money, percent, primaryId, quantity } from './_shared';
 import { certificateStatusEnum, subcontractStatusEnum, subcontractTypeEnum } from './enums';
+import { foremen } from './labor';
 import { auditColumns } from './org';
 import { projects } from './projects';
 import { units } from './resources';
@@ -20,6 +21,16 @@ export const subcontracts = pgTable(
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
+    /*
+     * The master record, when there is one.
+     *
+     * Nullable because a party never worked with again does not need one,
+     * and contracts written before the master existed keep the name they
+     * were signed under. `partyName` stays required for that reason: it is
+     * the name on the contract, which is not always the name in the address
+     * book.
+     */
+    foremanId: uuid('foreman_id').references(() => foremen.id, { onDelete: 'set null' }),
     partyName: text('party_name').notNull(),
     scope: text('scope'),
     contractType: subcontractTypeEnum('contract_type').notNull().default('LUMPSUM'),

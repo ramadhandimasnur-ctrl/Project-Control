@@ -13,6 +13,7 @@ export * from './schedule';
 export * from './progress';
 export * from './inventory';
 export * from './subcontract';
+export * from './labor';
 export * from './cash';
 export * from './costs';
 export * from './reporting';

@@ -5,6 +5,7 @@ const ITEMS: MasterDataNavItem[] = [
   { href: '/master-data/categories', label: 'Kategori', icon: 'tags' },
   { href: '/master-data/units', label: 'Satuan', icon: 'ruler' },
   { href: '/master-data/suppliers', label: 'Pemasok', icon: 'truck' },
+  { href: '/master-data/foremen', label: 'Mandor', icon: 'hardhat' },
   { href: '/master-data/ahsp-library', label: 'Pustaka AHSP', icon: 'library' },
   { href: '/master-data/warehouses', label: 'Gudang Pusat', icon: 'warehouse' },
 ];

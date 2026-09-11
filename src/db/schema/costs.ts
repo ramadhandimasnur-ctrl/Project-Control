@@ -6,6 +6,7 @@ import { ahspRoleEnum } from './enums';
 import { auditColumns } from './org';
 import { projects } from './projects';
 import { resources } from './resources';
+import { dailyLabor } from './labor';
 import { subcontractCertificates } from './subcontract';
 import { workItems } from './work';
 
@@ -58,6 +59,18 @@ export const actualCosts = pgTable(
       () => subcontractCertificates.id,
       { onDelete: 'cascade' },
     ),
+    /*
+     * The day of labour that produced this cost, when one did.
+     *
+     * Same reason as the certificate link beside it: approving a day again
+     * replaces its booking rather than adding a second copy, and the only
+     * other way to tell two identical bookings apart would be by amount and
+     * date — which on a site that pays the same crew the same rate every day
+     * is no way at all.
+     */
+    dailyLaborId: uuid('daily_labor_id').references(() => dailyLabor.id, {
+      onDelete: 'cascade',
+    }),
     /** Where this came from: an invoice number, a certificate, a payroll run. */
     sourceRef: text('source_ref'),
     note: text('note'),

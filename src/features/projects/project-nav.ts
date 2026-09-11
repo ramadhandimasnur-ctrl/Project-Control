@@ -142,6 +142,19 @@ export function projectNavSections(projectId: string): NavSection[] {
          * one most often run on paper. It sits under finance because that is
          * what it is: money out against work measured.
          */
+        /*
+         * The other half of how labour gets paid for. Piecework is measured
+         * and certified; a day-rate crew is paid for turning up, and the risk
+         * of a slow day sits with whoever is paying. Neither replaces the
+         * other, so both have a screen.
+         */
+        {
+          label: 'Upah Harian',
+          href: `${base}/labor`,
+          icon: Users,
+          phase: 7,
+          requiresCostAccess: true,
+        },
         {
           label: 'Borongan & Mandor',
           href: `${base}/subcontracts`,
