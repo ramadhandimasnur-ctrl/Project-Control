@@ -681,3 +681,43 @@ test('memilih pekerjaan kedua tidak memasang modal di layar desktop', async ({ p
   expect(state.bodyLocked, 'guliran halaman dikunci').toBe(false);
   expect(state.centreInsidePanel, 'ada yang menutupi panel analisa').toBe(true);
 });
+
+/*
+ * The RAB print sheet must not carry execution prices.
+ *
+ * These used to print together always — right for reading on screen, where the
+ * gap between them is the question, and wrong the moment somebody prints the
+ * stack and hands it to the client. The gap is the margin.
+ */
+test('cetak AHSP versi RAB tidak memuat harga pelaksanaan', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page);
+  const id = await openFirstProject(page);
+
+  await page.goto(`/projects/${id}/work-items/print?versi=rab`);
+  const sheet = page.locator('#ahsp-sheet');
+  await expect(sheet).toBeVisible();
+
+  const rabText = (await sheet.innerText()).toUpperCase();
+  expect(rabText, 'lembar RAB menyebut RAP').not.toContain('AHSP RAP');
+  expect(rabText, 'lembar RAB memuat selisih, yaitu margin').not.toContain('SELISIH');
+  // No confidentiality banner on a sheet that is safe to hand over.
+  expect(rabText).not.toContain('DOKUMEN INTERNAL');
+
+  // The internal version says what it is, in print rather than only on screen.
+  await page.goto(`/projects/${id}/work-items/print?versi=rap`);
+  const rapText = (await page.locator('#ahsp-sheet').innerText()).toUpperCase();
+  expect(rapText, 'lembar RAP tidak memperingatkan pembacanya').toContain('DOKUMEN INTERNAL');
+
+  /*
+   * The warning must survive onto paper. `data-print="hide"` on it would leave
+   * the screen honest and the printout silent, which is the wrong way round.
+   */
+  const hiddenInPrint = await page.evaluate(() => {
+    const banners = [...document.querySelectorAll('#ahsp-sheet *')].filter((el) =>
+      el.textContent?.includes('DOKUMEN INTERNAL'),
+    );
+    return banners.some((el) => el.closest('[data-print="hide"]') !== null);
+  });
+  expect(hiddenInPrint, 'peringatan disembunyikan saat dicetak').toBe(false);
+});

@@ -73,16 +73,17 @@ export default async function WorkItemsPage({
           </div>
           <div className="flex items-center gap-1">
             {/*
-              Both analyses of every item, in one document. Placed beside the
-              list rather than inside a single item's panel because that is the
-              usual request: the whole AHSP book, for the tender file.
+              The whole AHSP book, for the tender file. Placed beside the list
+              rather than inside a single item's panel because that is the usual
+              request. It opens on the RAB version; the print page itself offers
+              the internal ones, and says what they are.
             */}
             <ButtonLink
-              href={`/projects/${projectId}/work-items/print`}
+              href={`/projects/${projectId}/work-items/print?versi=rab`}
               variant="ghost"
               size="icon-sm"
               aria-label="Cetak AHSP seluruh pekerjaan"
-              title="Cetak AHSP (RAB & RAP) seluruh pekerjaan"
+              title="Cetak AHSP seluruh pekerjaan — versi RAB, dapat diserahkan"
             >
               <Printer className="size-4" aria-hidden />
             </ButtonLink>

@@ -22,12 +22,13 @@ import {
 import type { AhspLineView, AhspRole, EstimateType, WorkItemAnalyses } from '@/services/ahsp';
 
 /**
- * One work item's two analyses, laid out for paper.
+ * One work item's analyses, laid out for paper.
  *
- * RAB and RAP print one after the other in a single document rather than as
- * two files. They are read against each other — the question a reader has in
- * front of an AHSP sheet is what the gap between them is and where it comes
- * from — and two separate exports make that comparison a stapling exercise.
+ * Which analyses print is the caller's decision, and it is not cosmetic. RAB is
+ * what the client is entitled to see; RAP carries execution prices and the
+ * margin between them. They used to print together always — right for reading
+ * on screen, where the gap between them is the question, and wrong the moment
+ * somebody prints it and hands the stack over.
  *
  * A server component: nothing here is interactive, and rendering it on the
  * client would ship the whole price book to the browser to produce a page that
@@ -37,12 +38,16 @@ export function AhspPrintSheet({
   item,
   showCosts,
   pageBreak,
+  versions,
 }: {
   item: WorkItemAnalyses;
   showCosts: boolean;
   /** Every item after the first starts its own sheet. */
   pageBreak: boolean;
+  versions: readonly EstimateType[];
 }) {
+  // The comparison block only means anything with both sides on the page.
+  const comparing = versions.includes('RAB') && versions.includes('RAP');
   return (
     <section
       data-print={pageBreak ? 'page-break' : undefined}
@@ -55,15 +60,32 @@ export function AhspPrintSheet({
         </p>
         <h2 className="text-base font-semibold">{item.name}</h2>
         {item.spec ? <p className="text-xs text-muted-foreground">{item.spec}</p> : null}
+        {/*
+          Only the volume belonging to the version being printed. A RAB sheet
+          that mentions the execution volume has already said more about the
+          plan than the client was given.
+        */}
         <p className="text-xs text-muted-foreground">
-          Volume RAB {formatQuantity(item.volume)} {item.unitCode}
-          {item.volumeRap === item.volume && item.unitCodeRap === item.unitCode
-            ? ''
-            : ` · Volume RAP ${formatQuantity(item.volumeRap)} ${item.unitCodeRap}`}
+          {comparing ? (
+            <>
+              Volume RAB {formatQuantity(item.volume)} {item.unitCode}
+              {item.volumeRap === item.volume && item.unitCodeRap === item.unitCode
+                ? ''
+                : ` · Volume RAP ${formatQuantity(item.volumeRap)} ${item.unitCodeRap}`}
+            </>
+          ) : versions[0] === 'RAP' ? (
+            <>
+              Volume {formatQuantity(item.volumeRap)} {item.unitCodeRap}
+            </>
+          ) : (
+            <>
+              Volume {formatQuantity(item.volume)} {item.unitCode}
+            </>
+          )}
         </p>
       </header>
 
-      {(['RAB', 'RAP'] as const).map((estimateType) => (
+      {versions.map((estimateType) => (
         <AnalysisTable
           key={estimateType}
           estimateType={estimateType}
@@ -78,30 +100,42 @@ export function AhspPrintSheet({
       {showCosts ? (
         <div data-print="keep-together" className="rounded-md border p-3 text-sm">
           <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-3">
-            <Pair label={`Harga satuan RAB / ${item.unitCode}`} value={item.unitCostRab} />
-            <Pair label={`Harga satuan RAP / ${item.unitCodeRap}`} value={item.unitCostRap} />
+            {versions.includes('RAB') ? (
+              <Pair label={`Harga satuan RAB / ${item.unitCode}`} value={item.unitCostRab} />
+            ) : null}
+            {versions.includes('RAP') ? (
+              <Pair label={`Harga satuan RAP / ${item.unitCodeRap}`} value={item.unitCostRap} />
+            ) : null}
             {/*
               Unit rates are only comparable when both sides measure the same
               way. Totals always are — they are money for the whole item — so
               the difference below stays whatever the units.
             */}
-            {item.unitCodeRap === item.unitCode ? (
+            {/*
+              The gap between the two is the margin. It belongs on an internal
+              sheet and on no other, so it appears only when both sides were
+              asked for.
+            */}
+            {comparing && item.unitCodeRap === item.unitCode ? (
               <Pair
                 label="Selisih RAB − RAP"
                 value={(Number(item.unitCostRab) - Number(item.unitCostRap)).toFixed(2)}
               />
-            ) : (
+            ) : null}
+            {comparing && item.unitCodeRap !== item.unitCode ? (
               <div className="flex items-baseline justify-between gap-3">
                 <dt className="text-xs text-muted-foreground">Selisih harga satuan</dt>
                 <dd className="text-xs text-muted-foreground">satuan berbeda</dd>
               </div>
-            )}
-            <Pair label="Total RAB" value={item.totalRab} />
-            <Pair label="Total RAP" value={item.totalRap} />
-            <Pair
-              label="Selisih total"
-              value={(Number(item.totalRab) - Number(item.totalRap)).toFixed(2)}
-            />
+            ) : null}
+            {versions.includes('RAB') ? <Pair label="Total RAB" value={item.totalRab} /> : null}
+            {versions.includes('RAP') ? <Pair label="Total RAP" value={item.totalRap} /> : null}
+            {comparing ? (
+              <Pair
+                label="Selisih total"
+                value={(Number(item.totalRab) - Number(item.totalRap)).toFixed(2)}
+              />
+            ) : null}
           </dl>
         </div>
       ) : null}
