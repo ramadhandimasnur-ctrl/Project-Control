@@ -144,6 +144,7 @@ BEGIN
       ('ahsp_templates',            'pc_can_access_org(org_id)',                    true),
       ('actual_costs',              'pc_can_access_project(project_id)',            true),
       ('foremen',                   'pc_can_access_org(org_id)',                    true),
+      ('import_refs',               'pc_can_access_org(org_id)',                    true),
       ('daily_labor',               'pc_can_access_project(project_id)',            true),
       ('daily_labor_lines',
         'EXISTS (SELECT 1 FROM public.daily_labor d WHERE d.id = daily_labor_id AND pc_can_access_project(d.project_id))', true),

@@ -1,4 +1,4 @@
-import { FolderPlus, Plus } from 'lucide-react';
+import { FileSpreadsheet, FolderPlus, Plus } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/table';
 import { PROJECT_ROLE_LABELS } from '@/lib/auth/roles';
 import { formatCurrency, formatDay } from '@/lib/format';
+import { assertOrgAccess } from '@/services/org-access';
 import { listProjects } from '@/services/projects';
 import { requireSessionUser } from '@/services/session';
 
@@ -37,7 +38,7 @@ const STATUS_VARIANTS = {
 
 export default async function ProjectsPage() {
   const user = await requireSessionUser();
-  const projects = await listProjects(user);
+  const [projects, access] = await Promise.all([listProjects(user), assertOrgAccess(user.id)]);
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 p-6">
@@ -45,10 +46,18 @@ export default async function ProjectsPage() {
         title="Proyek"
         description="Setiap proyek memiliki pekerjaan, sumber daya, jadwal, dan kas sendiri."
         actions={
-          <ButtonLink href="/projects/new">
-            <Plus className="size-4" aria-hidden />
-            Proyek baru
-          </ButtonLink>
+          <>
+            {access.globalRole === 'ADMIN' ? (
+              <ButtonLink variant="outline" href="/master-data/import-workbook">
+                <FileSpreadsheet className="size-4" aria-hidden />
+                Impor workbook
+              </ButtonLink>
+            ) : null}
+            <ButtonLink href="/projects/new">
+              <Plus className="size-4" aria-hidden />
+              Proyek baru
+            </ButtonLink>
+          </>
         }
       />
 
